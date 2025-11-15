@@ -1,0 +1,325 @@
+{
+  "info": {
+    "name": "Reports Download API",
+    "description": "Collection for testing the three report download endpoints",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{admin_token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:5000",
+      "type": "string"
+    },
+    {
+      "key": "admin_token",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "1. Route Seat Report Download (PDF)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/api/admin/reports/route-seat-report-download?routeId=507f1f77bcf86cd799439011&date=2025-10-28",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "admin",
+            "reports",
+            "route-seat-report-download"
+          ],
+          "query": [
+            {
+              "key": "routeId",
+              "value": "507f1f77bcf86cd799439011",
+              "description": "MongoDB ObjectId of the route (Required)"
+            },
+            {
+              "key": "date",
+              "value": "2025-10-28",
+              "description": "Date in YYYY-MM-DD format (Required)"
+            }
+          ]
+        },
+        "description": "Download a PDF report showing the bus seating chart with passenger information for a specific route and date.\n\n**Response:**\n- PDF file with seating chart\n- Shows occupied seats in blue with passenger names\n- Shows empty seats with just seat numbers\n- Includes driver information (MX and US drivers)"
+      },
+      "response": []
+    },
+    {
+      "name": "2. Sales Report Download (Excel)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/api/admin/reports/sales-report-download?fromDate=2025-10-20&toDate=2025-10-28&format=excel",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "admin",
+            "reports",
+            "sales-report-download"
+          ],
+          "query": [
+            {
+              "key": "fromDate",
+              "value": "2025-10-20",
+              "description": "Start date in YYYY-MM-DD format (Optional, defaults to 7 days ago)"
+            },
+            {
+              "key": "toDate",
+              "value": "2025-10-28",
+              "description": "End date in YYYY-MM-DD format (Optional, defaults to today)"
+            },
+            {
+              "key": "salesDateType",
+              "value": "sale",
+              "description": "Filter by 'sale' or 'departure' date (Optional, defaults to 'sale')",
+              "disabled": true
+            },
+            {
+              "key": "salesAgent",
+              "value": "507f1f77bcf86cd799439011",
+              "description": "Filter by sales agent ID (Optional)",
+              "disabled": true
+            },
+            {
+              "key": "salesOffice",
+              "value": "507f1f77bcf86cd799439011",
+              "description": "Filter by sales office ID (Optional)",
+              "disabled": true
+            },
+            {
+              "key": "format",
+              "value": "excel",
+              "description": "Output format: 'excel' or 'pdf' (Optional, defaults to 'excel')"
+            }
+          ]
+        },
+        "description": "Download a sales report in Excel format showing all ticket sales.\n\n**Response:**\n- Excel (.xlsx) file\n- Grouped by: Sales Office → Payment Type → Agent\n- Includes subtotals for each group\n- Shows prices in both USD and MXN"
+      },
+      "response": []
+    },
+    {
+      "name": "2. Sales Report Download (PDF)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/api/admin/reports/sales-report-download?fromDate=2025-10-20&toDate=2025-10-28&format=pdf",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "admin",
+            "reports",
+            "sales-report-download"
+          ],
+          "query": [
+            {
+              "key": "fromDate",
+              "value": "2025-10-20",
+              "description": "Start date in YYYY-MM-DD format (Optional)"
+            },
+            {
+              "key": "toDate",
+              "value": "2025-10-28",
+              "description": "End date in YYYY-MM-DD format (Optional)"
+            },
+            {
+              "key": "salesDateType",
+              "value": "departure",
+              "description": "Filter by 'sale' or 'departure' date (Optional)",
+              "disabled": true
+            },
+            {
+              "key": "format",
+              "value": "pdf",
+              "description": "Output format: 'excel' or 'pdf'"
+            }
+          ]
+        },
+        "description": "Download a sales report in PDF format.\n\n**Response:**\n- PDF file\n- Same data as Excel format\n- Better for printing"
+      },
+      "response": []
+    },
+    {
+      "name": "2. Sales Report (Filtered by Agent)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/api/admin/reports/sales-report-download?fromDate=2025-10-20&toDate=2025-10-28&salesAgent=507f1f77bcf86cd799439011&format=excel",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "admin",
+            "reports",
+            "sales-report-download"
+          ],
+          "query": [
+            {
+              "key": "fromDate",
+              "value": "2025-10-20"
+            },
+            {
+              "key": "toDate",
+              "value": "2025-10-28"
+            },
+            {
+              "key": "salesAgent",
+              "value": "507f1f77bcf86cd799439011",
+              "description": "Filter by specific sales agent"
+            },
+            {
+              "key": "format",
+              "value": "excel"
+            }
+          ]
+        },
+        "description": "Download sales report filtered by a specific sales agent."
+      },
+      "response": []
+    },
+    {
+      "name": "3. Drivers Report Download (Excel)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/api/admin/reports/drivers-report-download?fromDate=2025-10-20&toDate=2025-10-28&format=excel",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "admin",
+            "reports",
+            "drivers-report-download"
+          ],
+          "query": [
+            {
+              "key": "fromDate",
+              "value": "2025-10-20",
+              "description": "Start date in YYYY-MM-DD format (Optional, defaults to 7 days ago)"
+            },
+            {
+              "key": "toDate",
+              "value": "2025-10-28",
+              "description": "End date in YYYY-MM-DD format (Optional, defaults to today)"
+            },
+            {
+              "key": "driverId",
+              "value": "507f1f77bcf86cd799439011",
+              "description": "Filter by specific driver ID (Optional)",
+              "disabled": true
+            },
+            {
+              "key": "format",
+              "value": "excel",
+              "description": "Output format: 'excel' or 'pdf' (Optional, defaults to 'excel')"
+            }
+          ]
+        },
+        "description": "Download a drivers report in Excel format showing trip details and driver assignments.\n\n**Response:**\n- Excel (.xlsx) file\n- Shows bus number, route, date, time\n- Lists both MX and US drivers\n- Includes passenger count"
+      },
+      "response": []
+    },
+    {
+      "name": "3. Drivers Report Download (PDF)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/api/admin/reports/drivers-report-download?fromDate=2025-10-20&toDate=2025-10-28&format=pdf",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "admin",
+            "reports",
+            "drivers-report-download"
+          ],
+          "query": [
+            {
+              "key": "fromDate",
+              "value": "2025-10-20"
+            },
+            {
+              "key": "toDate",
+              "value": "2025-10-28"
+            },
+            {
+              "key": "format",
+              "value": "pdf",
+              "description": "Output format: 'excel' or 'pdf'"
+            }
+          ]
+        },
+        "description": "Download a drivers report in PDF format.\n\n**Response:**\n- PDF file\n- Same data as Excel format\n- Better for printing"
+      },
+      "response": []
+    },
+    {
+      "name": "3. Drivers Report (Filtered by Driver)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/api/admin/reports/drivers-report-download?fromDate=2025-10-20&toDate=2025-10-28&driverId=507f1f77bcf86cd799439011&format=excel",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "admin",
+            "reports",
+            "drivers-report-download"
+          ],
+          "query": [
+            {
+              "key": "fromDate",
+              "value": "2025-10-20"
+            },
+            {
+              "key": "toDate",
+              "value": "2025-10-28"
+            },
+            {
+              "key": "driverId",
+              "value": "507f1f77bcf86cd799439011",
+              "description": "Filter by specific driver (works for both MX and US drivers)"
+            },
+            {
+              "key": "format",
+              "value": "excel"
+            }
+          ]
+        },
+        "description": "Download drivers report filtered by a specific driver (searches both MX and US driver fields)."
+      },
+      "response": []
+    }
+  ]
+}
+

@@ -1,0 +1,7 @@
+node_modules
+dist
+src/public/uploads*
+.env
+los-mismos-staging-8432b3d3637a.json
+.kiro
+*.md

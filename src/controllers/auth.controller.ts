@@ -14,11 +14,22 @@ import mongoose from "mongoose";
 import { rpID, rpName, rpOrigin, SALT_ROUNDS } from "../config/environment";
 import { OtpTypes, UserRole, IProfile } from "../models";
 import DeviceModel from "../models/device.model";
-import { generateAuthenticationOptions, generateRegistrationOptions, verifyAuthenticationResponse, verifyRegistrationResponse } from "@simplewebauthn/server";
+import {
+  generateAuthenticationOptions,
+  generateRegistrationOptions,
+  verifyAuthenticationResponse,
+  verifyRegistrationResponse,
+} from "@simplewebauthn/server";
 import { randomInt } from "crypto";
 import ChallengeModel from "../models/challenge.model";
 import LoginChallengeModel from "../models/login-challenge.model";
 import PasskeyModel from "../models/passkey.model";
+import AuthConfig from "../config/authConfig";
+import jwt, { JwtPayload } from "jsonwebtoken";
+
+import { verifyIdToken } from "apple-signin-auth";
+import { OAuth2Client } from "google-auth-library";
+import AuthenticationHelper from "../helper/authentication.helper";
 
 export const signup = async (req: Request, res: Response) => {
   try {
@@ -108,7 +119,7 @@ export const login = async (req: Request, res: Response) => {
       );
     }
 
-    const hashPassword = await bcrypt.compareSync(password, user.password!)
+    const hashPassword = await bcrypt.compareSync(password, user.password!);
 
     if (!hashPassword) {
       throw new CustomError(
@@ -132,7 +143,7 @@ export const login = async (req: Request, res: Response) => {
       await DeviceModel.findByIdAndUpdate(checkDevice._id, {
         auth: user._id,
         isActive: true,
-        lastAuthMethod: 'password',
+        lastAuthMethod: "password",
         lastLoginAt: new Date(),
       });
     } else {
@@ -141,7 +152,7 @@ export const login = async (req: Request, res: Response) => {
         deviceToken,
         deviceName: req.headers["user-agent"] || "unknown",
         deviceType,
-        lastAuthMethod: 'password',
+        lastAuthMethod: "password",
         lastLoginAt: new Date(),
       });
     }
@@ -183,7 +194,7 @@ export const login = async (req: Request, res: Response) => {
     return ResponseUtil.successResponse(
       res,
       STATUS_CODES.SUCCESS,
-      { user:userObj, token },
+      { user: userObj, token },
       AUTH_CONSTANTS.LOGGED_IN
     );
   } catch (err) {
@@ -224,7 +235,7 @@ export const verifyOtp = async (req: Request, res: Response) => {
       return ResponseUtil.successResponse(
         res,
         STATUS_CODES.SUCCESS,
-        { token,role: user.role,userId:userId,email: user.email },
+        { token, role: user.role, userId: userId, email: user.email },
         AUTH_CONSTANTS.OTP_VERIFIED
       );
     }
@@ -397,10 +408,12 @@ export const updateProfile = async (req: CustomRequest, res: Response) => {
       driverLicenseId,
       phoneNumber,
       isActive,
-      isDeleted
+      isDeleted,
     } = req.body;
     const authId = req.authId;
-    const user = await AuthModel.findById(authId).populate<{ profile: IProfile }>("profile");
+    const user = await AuthModel.findById(authId).populate<{
+      profile: IProfile;
+    }>("profile");
     if (!user) {
       throw new CustomError(
         STATUS_CODES.NOT_FOUND,
@@ -415,42 +428,52 @@ export const updateProfile = async (req: CustomRequest, res: Response) => {
     }
 
     const profiledoc = {
-      firstName:firstName || user.profile?.firstName,
-      lastName:lastName || user.profile?.lastName,
+      firstName: firstName || user.profile?.firstName,
+      lastName: lastName || user.profile?.lastName,
       dob: dateOfBirth || user.profile?.dob,
-      gender:gender || user.profile?.gender,
-      phoneNumber:phoneNumber || user.profile?.phoneNumber,
+      gender: gender || user.profile?.gender,
+      phoneNumber: phoneNumber || user.profile?.phoneNumber,
       pictureUrl,
       address: {
         streetAddress: address || user.profile?.address?.streetAddress,
-        city:city || user.profile?.address?.city,
-        state:state || user.profile?.address?.state,
-        postalCode:postalCode || user.profile?.address?.postalCode,
+        city: city || user.profile?.address?.city,
+        state: state || user.profile?.address?.state,
+        postalCode: postalCode || user.profile?.address?.postalCode,
       },
-      emergencyContact:emergencyContact || user.profile?.emergencyContact,
+      emergencyContact: emergencyContact || user.profile?.emergencyContact,
       documents: {
-        documentCode:documentCode || user.profile?.documents?.documentCode,
-        documentNumber:documentNumber || user.profile?.documents?.documentNumber,
-        documentIssuingCountry:documentIssuingCountry || user.profile?.documents?.documentIssuingCountry,
-        driverLicenseId:driverLicenseId || user.profile?.documents?.driverLicenseId,
+        documentCode: documentCode || user.profile?.documents?.documentCode,
+        documentNumber:
+          documentNumber || user.profile?.documents?.documentNumber,
+        documentIssuingCountry:
+          documentIssuingCountry ||
+          user.profile?.documents?.documentIssuingCountry,
+        driverLicenseId:
+          driverLicenseId || user.profile?.documents?.driverLicenseId,
       },
     };
-    if(isActive !== undefined){
-      isActive = isActive === 'true' ? true : false;
+    if (isActive !== undefined) {
+      isActive = isActive === "true" ? true : false;
       await AuthModel.findByIdAndUpdate(authId, {
         isActive: isActive,
       });
     }
-    if(isDeleted !== undefined){
-      isDeleted = isDeleted === 'true' ? true : false;
+    if (isDeleted !== undefined) {
+      isDeleted = isDeleted === "true" ? true : false;
       await AuthModel.findByIdAndUpdate(authId, {
         isActive: isDeleted ? false : user.isActive,
-        email: isDeleted ? `${user.email}_deleted_${new Date().getTime()}` : user.email,
+        email: isDeleted
+          ? `${user.email}_deleted_${new Date().getTime()}`
+          : user.email,
         deletedAt: isDeleted ? new Date() : null,
       });
     }
 
-    const profile = await ProfileModel.findByIdAndUpdate(user.profile?._id, profiledoc, { new: true });
+    const profile = await ProfileModel.findByIdAndUpdate(
+      user.profile?._id,
+      profiledoc,
+      { new: true }
+    );
     const userWithProfile = await AuthModel.findById(authId)
       .populate("profile")
       .select("-password");
@@ -542,8 +565,8 @@ export const createChallange = async (req: CustomRequest, res: Response) => {
       );
     }
     console.log("rpID!,rpName!");
-    console.log(rpID!,rpName!);
-    const challengePayload = await  generateRegistrationOptions({
+    console.log(rpID!, rpName!);
+    const challengePayload = await generateRegistrationOptions({
       rpID: rpID!,
       rpName: rpName!,
       userName: user?.email || "",
@@ -559,18 +582,18 @@ export const createChallange = async (req: CustomRequest, res: Response) => {
       //     alg: -7,
       //   },
       // ],
-    })
+    });
     // await ChallengeModel.deleteMany({ auth: user._id });
     await ChallengeModel.create({
       auth: user._id,
       profile: user.profile,
       challenge: challengePayload.challenge,
     });
-    
+
     return ResponseUtil.successResponse(
       res,
       STATUS_CODES.SUCCESS,
-      { options:challengePayload },
+      { options: challengePayload },
       AUTH_CONSTANTS.CHALLENGE_CREATED
     );
   } catch (err) {
@@ -604,7 +627,7 @@ export const verifyChallenge = async (req: CustomRequest, res: Response) => {
       );
     }
     await ChallengeModel.findByIdAndDelete(challengeRes._id);
-    
+
     // Store the new passkey
     await PasskeyModel.create({
       auth: authId,
@@ -613,7 +636,7 @@ export const verifyChallenge = async (req: CustomRequest, res: Response) => {
       name: req.body.passkeyName || "Passkey",
       deviceType: req.body.deviceType || "Unknown",
     });
-    
+
     // Enable biometric authentication for the user
     await AuthModel.findByIdAndUpdate(authId, {
       bioMetricEnabled: true,
@@ -668,15 +691,18 @@ export const loginChallenge = async (req: CustomRequest, res: Response) => {
   }
 };
 
-export const verifyLoginChallenge = async (req: CustomRequest, res: Response) => {
+export const verifyLoginChallenge = async (
+  req: CustomRequest,
+  res: Response
+) => {
   try {
     const { authId } = req;
     const { options, deviceToken, deviceType } = req.body;
     const [challengeRes, user] = await Promise.all([
       LoginChallengeModel.findOne({ auth: authId }),
-      AuthModel.findById(authId).populate("profile")
+      AuthModel.findById(authId).populate("profile"),
     ]);
-    
+
     if (!user) {
       throw new CustomError(
         STATUS_CODES.NOT_FOUND,
@@ -698,11 +724,11 @@ export const verifyLoginChallenge = async (req: CustomRequest, res: Response) =>
 
     // Find the passkey by credential ID from the authentication response
     const credentialId = options.id;
-    const passkey = await PasskeyModel.findOne({ 
-      auth: authId, 
-      credentialId: credentialId 
+    const passkey = await PasskeyModel.findOne({
+      auth: authId,
+      credentialId: credentialId,
     });
-    
+
     if (!passkey) {
       throw new CustomError(
         STATUS_CODES.BAD_REQUEST,
@@ -723,12 +749,12 @@ export const verifyLoginChallenge = async (req: CustomRequest, res: Response) =>
         AUTH_CONSTANTS.CHALLENGE_VERIFICATION_FAILED
       );
     }
-    
+
     // Update passkey last used timestamp
     await PasskeyModel.findByIdAndUpdate(passkey._id, {
       lastUsed: new Date(),
     });
-    
+
     // Handle device token if provided
     if (deviceToken) {
       const checkDevice = await DeviceModel.findOne({ deviceToken });
@@ -737,7 +763,7 @@ export const verifyLoginChallenge = async (req: CustomRequest, res: Response) =>
         await DeviceModel.findByIdAndUpdate(checkDevice._id, {
           auth: authId,
           isActive: true,
-          lastAuthMethod: 'biometric',
+          lastAuthMethod: "biometric",
           lastLoginAt: new Date(),
         });
       } else {
@@ -747,15 +773,15 @@ export const verifyLoginChallenge = async (req: CustomRequest, res: Response) =>
           deviceToken,
           deviceName: req.headers["user-agent"] || "unknown",
           deviceType: deviceType || "unknown",
-          lastAuthMethod: 'biometric',
+          lastAuthMethod: "biometric",
           lastLoginAt: new Date(),
         });
       }
     }
-    
+
     // Clean up the challenge
     await LoginChallengeModel.findByIdAndDelete(challengeRes._id);
-    
+
     let userObj = user.toObject();
     delete userObj.password;
     const token = generateToken({
@@ -767,7 +793,7 @@ export const verifyLoginChallenge = async (req: CustomRequest, res: Response) =>
     return ResponseUtil.successResponse(
       res,
       STATUS_CODES.SUCCESS,
-      { user:userObj,token,message: AUTH_CONSTANTS.CHALLENGE_VERIFIED },
+      { user: userObj, token, message: AUTH_CONSTANTS.CHALLENGE_VERIFIED },
       AUTH_CONSTANTS.CHALLENGE_VERIFIED
     );
   } catch (err) {
@@ -782,9 +808,9 @@ export const getPasskeys = async (req: CustomRequest, res: Response) => {
   try {
     const { authId } = req;
     const passkeys = await PasskeyModel.find({ auth: authId })
-      .select('-credential') // Don't return the full credential object
+      .select("-credential") // Don't return the full credential object
       .sort({ createdAt: -1 });
-    
+
     return ResponseUtil.successResponse(
       res,
       STATUS_CODES.SUCCESS,
@@ -802,31 +828,30 @@ export const deletePasskey = async (req: CustomRequest, res: Response) => {
   try {
     const { authId } = req;
     const { passkeyId } = req.params;
-    
-    const passkey = await PasskeyModel.findOne({ 
-      _id: passkeyId, 
-      auth: authId 
+
+    const passkey = await PasskeyModel.findOne({
+      _id: passkeyId,
+      auth: authId,
     });
-    
+
     if (!passkey) {
-      throw new CustomError(
-        STATUS_CODES.NOT_FOUND,
-        "Passkey not found"
-      );
+      throw new CustomError(STATUS_CODES.NOT_FOUND, "Passkey not found");
     }
-    
+
     await PasskeyModel.findByIdAndDelete(passkeyId);
-    
+
     // Check if user has any remaining passkeys
-    const remainingPasskeys = await PasskeyModel.countDocuments({ auth: authId });
-    
+    const remainingPasskeys = await PasskeyModel.countDocuments({
+      auth: authId,
+    });
+
     // If no passkeys left, disable biometric authentication
     if (remainingPasskeys === 0) {
       await AuthModel.findByIdAndUpdate(authId, {
         bioMetricEnabled: false,
       });
     }
-    
+
     return ResponseUtil.successResponse(
       res,
       STATUS_CODES.SUCCESS,
@@ -845,20 +870,17 @@ export const updatePasskeyName = async (req: CustomRequest, res: Response) => {
     const { authId } = req;
     const { passkeyId } = req.params;
     const { name } = req.body;
-    
+
     const passkey = await PasskeyModel.findOneAndUpdate(
       { _id: passkeyId, auth: authId },
       { name },
       { new: true }
-    ).select('-credential');
-    
+    ).select("-credential");
+
     if (!passkey) {
-      throw new CustomError(
-        STATUS_CODES.NOT_FOUND,
-        "Passkey not found"
-      );
+      throw new CustomError(STATUS_CODES.NOT_FOUND, "Passkey not found");
     }
-    
+
     return ResponseUtil.successResponse(
       res,
       STATUS_CODES.SUCCESS,
@@ -872,6 +894,340 @@ export const updatePasskeyName = async (req: CustomRequest, res: Response) => {
   }
 };
 
+export const autoLogin = async (req: Request, res: Response) => {
+  try {
+    const { token } = req.body;
+
+    if (!token) {
+      throw new CustomError(
+        STATUS_CODES.NOT_FOUND,
+        "tokn in the body not found"
+      );
+    }
+    const bearer = token.split(" ")[1];
+
+    jwt.verify(
+      String(bearer),
+      String(AuthConfig.JWT_SECRET),
+      async (err, decoded) => {
+        if (err) {
+          return ResponseUtil.successResponse(
+            res,
+            STATUS_CODES.BAD_REQUEST,
+            { valid: false },
+            "Session expired please try log in again"
+          );
+          // return res.status(410).json({ message: "Invalid Token" });
+        } else {
+          const decodedPayload = decoded as JwtPayload;
+          const authId = decodedPayload.authId;
+          const email = decodedPayload.email;
+          const role = decodedPayload.role;
+          const userWithProfile = await AuthModel.findById(authId).populate(
+            "profile"
+          );
+          if (!userWithProfile) {
+            return ResponseUtil.successResponse(
+              res,
+              STATUS_CODES.SUCCESS,
+              {
+                exists: false,
+                isDeleted: false,
+                isDeletedByAdmin: false,
+              },
+              AUTH_CONSTANTS.USER_NOT_FOUND
+            );
+          }
+          const newToken: string = generateToken({
+            email: email,
+            authId: String(userWithProfile._id),
+            role: userWithProfile.role as UserRole,
+          });
+          // if (userWithProfile.isDeleted) {
+          //   if (userWithProfile.deletedBy === "admin") {
+          //     return ResponseUtil.successResponse(
+          //       res,
+          //       STATUS_CODES.SUCCESS,
+          //       {
+          //         exists: true,
+          //         isDeleted: true,
+          //         isDeletedByAdmin: true,
+          //       }, AUTH_CONSTANTS.ACCOUNT_DELETED_BY_ADMIN);
+          //   }
+          //   else {
+          //     return ResponseUtil.successResponse(
+          //       res,
+          //       STATUS_CODES.SUCCESS,
+          //       {
+          //         exists: true,
+          //         isDeleted: true,
+          //         isDeletedByAdmin: false,
+          //       }, AUTH_CONSTANTS.ACCOUNT_DELETED);
+          //   }
+          // }
+          if (!userWithProfile.isVerified) {
+            const otp = randomInt(100000, 999999);
+            helper.AuthenticationHelper.sendOTP(
+              email,
+              userWithProfile._id,
+              OtpTypes.registaration,
+              otp
+            );
+            return ResponseUtil.successResponse(
+              res,
+              STATUS_CODES.SUCCESS,
+              {
+                isVerified: userWithProfile.isVerified,
+                isProfileCompleted: userWithProfile.isProfileCompleted,
+                user: { _id: userWithProfile._id, role: userWithProfile.role },
+                otp,
+              },
+              AUTH_CONSTANTS.VERIFY_ACCOUNT
+            );
+          }
+
+          if (!userWithProfile.isProfileCompleted) {
+            return ResponseUtil.successResponse(
+              res,
+              STATUS_CODES.SUCCESS,
+              {
+                isProfileCompleted: userWithProfile.isProfileCompleted,
+                isVerified: userWithProfile.isVerified,
+                user: { _id: userWithProfile._id, role: userWithProfile.role },
+                token: newToken,
+              },
+              AUTH_CONSTANTS.INCOMPLETE_PROFILE
+            );
+          }
+
+          // const token = generateToken({
+          //   email: userWithProfile.email,
+          //   authId: userWithProfile._id!.toString(),
+          //   profileId: userWithProfile.profile?._id!.toString(),
+          //   role: userWithProfile.role as UserRole,
+          //   type: "Authorization"
+          // });
+          return ResponseUtil.successResponse(
+            res,
+            STATUS_CODES.SUCCESS,
+            { user: userWithProfile, token: newToken },
+            AUTH_CONSTANTS.LOGGED_IN
+          );
+        }
+      }
+    );
+  } catch (err) {
+    if (err instanceof CustomError)
+      return ResponseUtil.errorResponse(res, err.statusCode, err.message);
+    ResponseUtil.handleError(res, err);
+  }
+};
+
+export const socialLogin = async (req: Request, res: Response) => {
+  try {
+    // let register: boolean;
+    // const allowedRoles = ["user", "admin"];
+    const { access_token, provider, device_token, platform = null, role} = req.body;
+
+    console.log(
+      "🚀 ~ socialLogin ~ { access_token, provider, device_token }:",
+      { access_token, provider, device_token }
+    );
+    let profile: any;
+    let userId;
+    switch (provider) {
+      case "google":
+        profile = await verifyGoogleToken(access_token, platform);
+        break;
+      // case 'facebook':
+      //     profile = await this.verifyFacebookToken(access_token);
+      //     break;
+      case "apple":
+        profile = await verifyAppleToken(access_token);
+        break;
+      default:
+        throw new Error("Unsupported provider");
+    }
+    const { email, name, picture, providerId } = profile;
+    console.log("🚀 ~ UsersService ~ handleSocialLogin ~ picture:", picture);
+    let savedImagePath = null;
+
+    if (picture != null) {
+      console.log("🚀 ~ UsersService ~ handleSocialLogin ~ picture:", picture);
+      savedImagePath = await AuthenticationHelper.downloadAndSaveImage(
+        picture,
+        "./public/uploads"
+      );
+    }
+    let newUser;
+    let media: any;
+    let user = await AuthModel.findOne({ email });
+    userId = user?._id || null;
+    // if (user && user.isDeleted) {
+    //   return ResponseUtil.errorResponse(
+    //     res,
+    //     STATUS_CODES.BAD_REQUEST,
+    //     AUTH_CONSTANTS.ACCOUNT_DELETED_ERROR
+    //   );
+    // }
+    // if (user && user.isDisabled) {
+    //   throw new CustomError(STATUS_CODES.BAD_REQUEST, AUTH_CONSTANTS.ACCOUNT_DISABLED);
+    // }
+    if (!user) {
+      // register = true;
+      newUser = await AuthModel.create({
+        email,
+        isVerified: true,
+        role
+      });
+      userId = newUser?._id || null;
+      if (!newUser) {
+        throw new CustomError(
+          STATUS_CODES.BAD_REQUEST,
+          AUTH_CONSTANTS.USER_NOT_FOUND
+        );
+      }
+      if (picture != null) {
+        media = savedImagePath;
+      }
+      await DeviceModel.create({
+        userId: newUser.id,
+        deviceToken: device_token,
+        status: "active",
+      });
+      if (newUser.profile) {
+        await ProfileModel.updateOne(
+          { auth: newUser._id },
+          { $set: { pictureUrl: picture != null ? media : null } }
+        );
+      } else {
+        let userProfile = await ProfileModel.create({
+          auth: newUser.id,
+          pictureUrl: picture != null ? media : null,
+          firstName: name,
+        });
+      }
+    }
+    // if (picture != null) {
+    //   media = await MediaModel.create({
+    //     type: "image",
+    //     url: `${IMG_URL_PREFIX}${savedImagePath}`,
+    //   });
+    // }
+    const updateDevice = await DeviceModel.findOneAndUpdate(
+      { auth: userId!, deviceToken: device_token },
+      { $set: { isLoggedIn: true } }
+    );
+    if (!updateDevice) {
+      await DeviceModel.create({
+        auth: userId!,
+        deviceToken: device_token,
+        isLoggedIn: true,
+      });
+    }
+    // if (media) {
+    //   // Get the user to find the correct profile ID
+    //   const user = await AuthModel.findById(userId!);
+    //   if (user?.profile) {
+    //     // Update the specific profile that's linked to the user
+    //     const updatedPP = await ProfileModel.updateOne(
+    //       { _id: user.profile },
+    //       { $set: { profilePicture: media } }
+    //     );
+    //     console.log("🚀 ~ socialLogin ~ updatedPP:", updatedPP);
+    //   }
+    // }
+    const getUser = await AuthModel.findOne({ email }).populate("profile");
+    if (!getUser) {
+      throw new CustomError(
+        STATUS_CODES.NOT_FOUND,
+        AUTH_CONSTANTS.USER_NOT_FOUND
+      );
+    }
+    const userObj = getUser.toObject();
+    delete userObj.password;
+    console.log(userObj);
+
+    const token: string = generateToken({
+      email: email,
+      authId: String(getUser._id),
+      role: getUser.role as UserRole,
+    });
+    // let token: any = generateToken({
+    //   email: email,
+    //   authId: newUser._id!.toString(),
+    //   profileId: String(userProfile?._id),
+    // });
+
+    console.log("🚀 ~ socialLogin ~ user:", user);
+    return ResponseUtil.successResponse(
+      res,
+      STATUS_CODES.SUCCESS,
+      { user: userObj, token },
+      AUTH_CONSTANTS.LOGGED_IN
+    );
+  } catch (err) {
+    ResponseUtil.handleError(res, err);
+  }
+};
+
+const verifyGoogleToken = async (token: string, platform: string) => {
+  try {
+    let CLIENT_ID =
+      platform == "android"
+        ? process.env.GOOGLE_ANDROID_CLIENT_ID
+        : process.env.GOOGLE_IOS_CLIENT_ID;
+
+    let googleClient = new OAuth2Client(
+      CLIENT_ID
+      //   process.env.GOOGLE_CLIENT_SECRET
+    );
+    const ticket = await googleClient.verifyIdToken({
+      idToken: token,
+      audience: CLIENT_ID,
+    });
+
+    const payload = ticket.getPayload();
+    console.log("User Google", {
+      email: payload?.email,
+      name: payload?.name,
+      picture: payload?.picture,
+      providerId: payload?.sub,
+    });
+    return {
+      email: payload?.email,
+      name: payload?.name,
+      picture: payload?.picture,
+      providerId: payload?.sub,
+    };
+  } catch (error) {
+    throw new Error("Invalid Google token");
+  }
+};
+
+const verifyAppleToken = async (token: string) => {
+  try {
+    const payload = await verifyIdToken(token, {
+      audience: process.env.APPLE_CLIENT_ID,
+      issuer: "https://appleid.apple.com",
+    });
+    console.log("🚀 ~ UsersService ~ verifyAppleToken ~", {
+      email: payload.email,
+      providerId: payload.sub,
+      name: payload.email,
+      picture: null,
+    });
+    // Extract user information from the payload
+    return {
+      email: payload.email,
+      providerId: payload.sub,
+      name: payload.email,
+      picture: null,
+    };
+  } catch (error) {
+    throw new Error("Invalid Apple token: " + error);
+  }
+};
 
 // export const forgetAccount = async (req: Request, res: Response) => {
 //   try {

@@ -3,6 +3,12 @@ import { Types } from "mongoose";
 export type ObjectId = Types.ObjectId;
 
 // Common enums and types used across models
+export enum LoginTypes {
+  Google="Google",
+  Apple= "Apple",
+  Default = "Default"
+}
+
 export enum UserRole {
   SUPER_ADMIN = "super_admin",
   MANAGER = "manager",
@@ -11,6 +17,7 @@ export enum UserRole {
   ACCOUNTANT = "accountant",
   CUSTOMER = "customer",
 }
+
 
 export enum ForWho {
   SELF = "self",

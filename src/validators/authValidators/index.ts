@@ -213,3 +213,10 @@ export const updateProfileSchema: ZodSchema<{
     postalCode: z.string().optional(),
     phoneNumber: z.string().optional(),
 });
+
+
+export const autoLoginSchema: ZodSchema<{
+  token: string;
+}> = z.object({
+  token: z.string().min(1,"token is requiredf").max(255),
+});

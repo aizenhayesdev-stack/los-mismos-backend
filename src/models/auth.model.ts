@@ -1,5 +1,5 @@
 import mongoose, { Schema, model } from "mongoose";
-import { ObjectId, UserRole } from "./common/types";
+import { LoginTypes, ObjectId, UserRole } from "./common/types";
 import { IProfile } from "./profile.model";
 
 export interface IAuth extends Document {
@@ -20,7 +20,7 @@ export interface IAuth extends Document {
 const AuthSchema = new Schema(
   {
     email: { type: Schema.Types.String, requried: true, unique: true },
-    password: { type: Schema.Types.String, requried: true },
+    password: { type: Schema.Types.String, requried: false },
     role: {
       type: Schema.Types.String,
       enum: UserRole,
@@ -50,6 +50,11 @@ const AuthSchema = new Schema(
       type: Schema.Types.Boolean,
       default: true,
     },
+    loginType:{
+      type: Schema.Types.String,
+      enum: LoginTypes,
+      default: LoginTypes.Default,
+    }
   },
   {
     timestamps: true,

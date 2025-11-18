@@ -20,7 +20,7 @@ router.post("/initialize", checkAdminAuth, initializePermissions);
 router.get("/", checkAdminAuth, getAllPermissions);
 
 // Get all roles with their permissions
-router.get("/roles", checkAdminAuth, getAllRolePermissions);
+router.get("/roles", checkAdminAuth,getAllRolePermissions);
 
 // Get permissions for a specific role
 router.get("/roles/:role", checkAdminAuth, getRolePermissions);

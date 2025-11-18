@@ -11,6 +11,7 @@ export const AUTH_CONSTANTS = {
   NOT_VERIFIED: "Not Verified",
   INCOMPLETE_PROFILE: "Please complete your profile",
   LOGGED_IN: "User logged in Sucessfully",
+  LOGGED_OUT: "User logged out Sucessfully",
   OTP_MISMATCH: "OTP Mismatch",
   OTP_EXPIRED: "OTP Expired",
   OTP_VERIFIED: "OTP Verified",

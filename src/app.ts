@@ -29,6 +29,10 @@ import adminPermissionRoutes from "./routes/admin/permission.routes";
 import notificationRoutes from "./routes/notification.routes";
 import adminNotificationRoutes from "./routes/admin/notification.routes";
 import adminQueueRoutes from "./routes/admin/queue.routes";
+// import chatRoutes from "./routes/chat.routes";
+// Customer Support System Routes
+import chatRoutes from "./routes/chat.routes";
+import supportTicketRoutes from "./routes/support-ticket.routes";
 
 dotenv.config();
 
@@ -66,6 +70,9 @@ app.use(`${API_PREFIX}/routes`, routesRoutes);
 app.use(`${API_PREFIX}/booking`, bookingRoutes);
 app.use(`${API_PREFIX}/driver`, driverRoutes);  
 app.use(`${API_PREFIX}/notifications`, notificationRoutes);
+// Customer Support System Routes
+app.use(`${API_PREFIX}/chat`, chatRoutes);
+app.use(`${API_PREFIX}/support-tickets`, supportTicketRoutes);
 // misc routes
 app.use(`${API_PREFIX}/misc`, miscRoutes);
 // admin routes
@@ -80,6 +87,8 @@ app.use(`${API_PREFIX}/admin/reports`, adminReportRoutes);
 app.use(`${API_PREFIX}/admin/permissions`, adminPermissionRoutes);
 app.use(`${API_PREFIX}/admin/notifications`, adminNotificationRoutes);
 app.use(`${API_PREFIX}/admin/queues`, adminQueueRoutes);
+app.use(`${API_PREFIX}/admin/chat`,chatRoutes );
+app.use(`${API_PREFIX}/admin/support-tickets`, supportTicketRoutes);
 // app.use(`${API_PREFIX}/admin/misc`, adminMiscRoutes);
 // booking routes (real-time seat booking)
 // web routes

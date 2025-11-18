@@ -19,6 +19,16 @@ import Notification from './notification.model';
 import Device from './device.model';
 import DriverReport from './driver-report.model';
 
+// Customer Support System Models
+import ChatSession from './chat-session.model';
+import ChatMessage from './chat-message.model';
+import SupportTicket from './support-ticket.model';
+import HelpArticle from './help-article.model';
+import HelpCategory from './help-category.model';
+import EmailTemplate from './email-template.model';
+import UserManagementOperation from './user-management.model';
+import RoleTemplate from './role-template.model';
+
 // Export individual models
 export {
   // User,
@@ -30,7 +40,16 @@ export {
   PaymentTransaction,
   Notification,
   Device,
-  DriverReport
+  DriverReport,
+  // Customer Support System Models
+  ChatSession,
+  ChatMessage,
+  SupportTicket,
+  HelpArticle,
+  HelpCategory,
+  EmailTemplate,
+  UserManagementOperation,
+  RoleTemplate
 };
 
 // Export interfaces for TypeScript usage
@@ -50,6 +69,17 @@ export type { IPaymentTransaction } from './payment-transaction.model';
 export type { INotification } from './notification.model';
 export type { IDevice } from './device.model';
 export type { IDriverReport } from './driver-report.model';
+
+// Customer Support System Interfaces
+export type { IChatSession } from './chat-session.model';
+export type { IChatMessage } from './chat-message.model';
+export type { ISupportTicket } from './support-ticket.model';
+export type { IHelpArticle } from './help-article.model';
+export type { IHelpCategory } from './help-category.model';
+
+export type { IEmailTemplate } from './email-template.model';
+export type { IUserManagementOperation } from './user-management.model';
+export type { IRoleTemplate } from './role-template.model';
 
 // Export common types and enums
 export * from './common/types';
@@ -72,7 +102,16 @@ const models = {
   PaymentTransaction,
   Notification,
   Device,
-  DriverReport
+  DriverReport,
+  // Customer Support System Models
+  ChatSession,
+  ChatMessage,
+  SupportTicket,
+  HelpArticle,
+  HelpCategory,
+  EmailTemplate,
+  UserManagementOperation,
+  RoleTemplate
 };
 
 export default models;

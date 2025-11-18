@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { createChallange, createProfile, getProfile, login, loginChallenge, sendOtp, signup, verifyChallenge, verifyLoginChallenge, verifyOtp, getPasskeys, deletePasskey, updatePasskeyName, changePassword, updateProfile, resetPassword, autoLogin } from "../controllers/auth.controller";
+import { createChallange, createProfile, getProfile, login, loginChallenge, sendOtp, signup, verifyChallenge, verifyLoginChallenge, verifyOtp, getPasskeys, deletePasskey, updatePasskeyName, changePassword, updateProfile, resetPassword, autoLogin, logout } from "../controllers/auth.controller";
 import { handleMediaFilesLocal } from "../utils/Mutlipart";
 import { checkDefaultToken } from "../middleware/check-default-token.middleware";
 import { checkUserAuth } from "../middleware/check-user-auth.middleware";
@@ -16,7 +16,8 @@ import {
   verifyLoginChallengeSchema,
   updatePasskeyNameSchema,
   updateProfileSchema,
-  autoLoginSchema
+  autoLoginSchema,
+  logoutSchema
 } from "../validators/authValidators";
 
 const router = Router();
@@ -45,6 +46,7 @@ router.post(
   updateProfile
 ); 
 router.post("/login", checkDefaultToken, validateBody(loginSchema), login);
+router.post("/logout", checkUserAuth, validateBody(logoutSchema), logout);
 router.post("/auto-login", checkDefaultToken, validateBody(autoLoginSchema), autoLogin);
 router.post("/send-otp", checkDefaultToken, validateBody(emailSchema), sendOtp);
 router.post("/verify-otp", checkDefaultToken, validateBody(otpVerifySchema), verifyOtp);

@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from "express";
 import { ZodSchema, ZodError } from "zod";
+import { validationResult } from "express-validator";
 import ResponseUtil from "../utils/Response/responseUtils";
 import { STATUS_CODES } from "../constants/statusCodes";
 
@@ -89,4 +90,25 @@ export const validate = (schema: any) => {
       );
     }
   };
+};
+
+// Express-validator middleware
+export const validateRequest = (req: Request, res: Response, next: NextFunction) => {
+  const errors = validationResult(req);
+  
+  if (!errors.isEmpty()) {
+    const errorMessages = errors.array().map((err) => ({
+      field: err.type === 'field' ? (err as any).path : 'unknown',
+      message: err.msg,
+    }));
+
+    return res.status(STATUS_CODES.BAD_REQUEST).json({
+      statusCode: STATUS_CODES.BAD_REQUEST,
+      success: false,
+      message: "Validation failed",
+      errors: errorMessages,
+    });
+  }
+
+  next();
 };

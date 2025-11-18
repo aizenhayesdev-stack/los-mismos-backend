@@ -1,11 +1,19 @@
-import { getFirebaseMessagingSafe, isFCMEnabled } from '../config/firebase';
-import Notification, { INotification, NotificationMetadata } from '../models/notification.model';
-import DeviceModel from '../models/device.model';
-import AuthModel from '../models/auth.model';
-import Profile from '../models/profile.model';
-import { NotificationCategory, NotificationType, DeliveryStatus, UserRole } from '../models/common/types';
-import { Types } from 'mongoose';
-import { notificationsQueue, JobName } from '../config/bullmq';
+import { getFirebaseMessagingSafe, isFCMEnabled } from "../config/firebase";
+import Notification, {
+  INotification,
+  NotificationMetadata,
+} from "../models/notification.model";
+import DeviceModel from "../models/device.model";
+import AuthModel from "../models/auth.model";
+import Profile from "../models/profile.model";
+import {
+  NotificationCategory,
+  NotificationType,
+  DeliveryStatus,
+  UserRole,
+} from "../models/common/types";
+import { Types } from "mongoose";
+import { notificationsQueue, JobName } from "../config/bullmq";
 
 export interface CreateNotificationOptions {
   userId?: string | Types.ObjectId;
@@ -15,7 +23,7 @@ export interface CreateNotificationOptions {
   body: string;
   imageUrl?: string;
   metadata?: NotificationMetadata;
-  priority?: 'high' | 'normal' | 'low';
+  priority?: "high" | "normal" | "low";
   scheduledFor?: Date;
   expiresAt?: Date;
   sendPush?: boolean;
@@ -29,14 +37,76 @@ export interface SendPushNotificationOptions {
   body: string;
   data?: Record<string, string>;
   imageUrl?: string;
-  priority?: 'high' | 'normal';
+  priority?: "high" | "normal";
 }
 
 class NotificationService {
   /**
+   * Check if notification should be sent based on user preferences
+   */
+  private shouldSendNotification(
+    category: NotificationCategory,
+    preferences?: any
+  ): boolean {
+    if (!preferences) return true; // Default to sending if no preferences set
+
+    // Map notification categories to preference fields
+    const categoryPreferenceMap: Record<NotificationCategory, keyof any> = {
+      [NotificationCategory.BOOKING_CONFIRMATION]: "bookingConfirmations",
+      [NotificationCategory.TRIP_REMINDER_24H]: "reminder24h",
+      [NotificationCategory.TRIP_REMINDER_2H]: "reminder2h",
+      [NotificationCategory.TRIP_REMINDER_30M]: "reminder30m",
+      [NotificationCategory.SCHEDULE_CHANGE]: "scheduleChanges",
+      [NotificationCategory.SCHEDULE_DELAY]: "scheduleChanges",
+      [NotificationCategory.EMERGENCY_WEATHER]: "emergencyAlerts",
+      [NotificationCategory.EMERGENCY_CANCELLATION]: "emergencyAlerts",
+      [NotificationCategory.EMERGENCY_SAFETY]: "emergencyAlerts",
+      [NotificationCategory.ADMIN_BUS_CAPACITY]: "emergencyAlerts", // Admin notifications always sent
+      [NotificationCategory.PAYMENT_RECEIPT]: "bookingConfirmations",
+      [NotificationCategory.REFUND_PROCESSED]: "bookingConfirmations",
+      [NotificationCategory.BOOKING_CANCELLED]: "bookingConfirmations",
+    };
+
+    const preferenceKey = categoryPreferenceMap[category];
+
+    // If no specific preference mapping, default to enabled
+    if (!preferenceKey) return true;
+
+    // Check if the specific preference is enabled (default to true if not set)
+    return preferences[preferenceKey] !== false;
+  }
+
+  /**
+   * Check if user wants trip reminders based on timing
+   */
+  private shouldSendTripReminder(
+    category: NotificationCategory,
+    preferences?: any
+  ): boolean {
+    if (!preferences) return true;
+
+    // Check general trip reminders preference first
+    if (preferences.tripReminders === false) return false;
+
+    // Then check specific timing preferences
+    switch (category) {
+      case NotificationCategory.TRIP_REMINDER_24H:
+        return preferences.reminder24h !== false;
+      case NotificationCategory.TRIP_REMINDER_2H:
+        return preferences.reminder2h !== false;
+      case NotificationCategory.TRIP_REMINDER_30M:
+        return preferences.reminder30m !== false;
+      default:
+        return true;
+    }
+  }
+
+  /**
    * Create a notification in the database
    */
-  async createNotification(options: CreateNotificationOptions): Promise<INotification> {
+  async createNotification(
+    options: CreateNotificationOptions
+  ): Promise<INotification> {
     try {
       const notification = await Notification.create({
         user: options.userId,
@@ -47,16 +117,16 @@ class NotificationService {
         body: options.body,
         imageUrl: options.imageUrl,
         metadata: options.metadata,
-        priority: options.priority || 'normal',
+        priority: options.priority || "normal",
         scheduledFor: options.scheduledFor,
         expiresAt: options.expiresAt,
         deliveryStatus: DeliveryStatus.PENDING,
-        isSent: false
+        isSent: false,
       });
 
       return notification;
     } catch (error) {
-      console.error('Error creating notification:', error);
+      console.error("Error creating notification:", error);
       throw error;
     }
   }
@@ -64,20 +134,24 @@ class NotificationService {
   /**
    * Send push notification via Firebase Cloud Messaging
    */
-  async sendPushNotification(options: SendPushNotificationOptions): Promise<string | null> {
+  async sendPushNotification(
+    options: SendPushNotificationOptions
+  ): Promise<string | null> {
     try {
       // Check if FCM is enabled
       if (!isFCMEnabled()) {
-        console.warn('⚠️ FCM is disabled - skipping push notification send');
-        return 'fcm-disabled';
+        console.warn("⚠️ FCM is disabled - skipping push notification send");
+        return "fcm-disabled";
       }
 
       const messaging = getFirebaseMessagingSafe();
       if (!messaging) {
-        console.warn('⚠️ Firebase messaging not available - skipping push notification send');
-        return 'messaging-unavailable';
+        console.warn(
+          "⚠️ Firebase messaging not available - skipping push notification send"
+        );
+        return "messaging-unavailable";
       }
-      
+
       const message: any = {
         token: options.token,
         notification: {
@@ -85,20 +159,20 @@ class NotificationService {
           body: options.body,
         },
         android: {
-          priority: options.priority || 'high',
+          priority: options.priority || "high",
           notification: {
-            sound: 'default',
-            clickAction: 'FLUTTER_NOTIFICATION_CLICK',
-          }
+            sound: "default",
+            clickAction: "FLUTTER_NOTIFICATION_CLICK",
+          },
         },
         apns: {
           payload: {
             aps: {
-              sound: 'default',
-              badge: 1
-            }
-          }
-        }
+              sound: "default",
+              badge: 1,
+            },
+          },
+        },
       };
 
       if (options.imageUrl) {
@@ -110,10 +184,10 @@ class NotificationService {
       }
 
       const response = await messaging.send(message);
-      console.log('✅ Successfully sent push notification:', response);
+      console.log("✅ Successfully sent push notification:", response);
       return response;
     } catch (error: any) {
-      console.error('❌ Error sending push notification:', error);
+      console.error("❌ Error sending push notification:", error);
       throw error;
     }
   }
@@ -124,12 +198,26 @@ class NotificationService {
   async sendToUser(options: CreateNotificationOptions): Promise<INotification> {
     try {
       if (!options.userId) {
-        throw new Error('userId is required for sendToUser');
+        throw new Error("userId is required for sendToUser");
       }
 
       // Check user's notification preferences
       const profile = await Profile.findOne({ auth: options.userId });
       const prefs = profile?.notificationPreferences;
+
+      // Check if user wants this type of notification
+      if (!this.shouldSendNotification(options.category, prefs)) {
+        console.log(
+          `🔕 Notification skipped for user ${options.userId} - category ${options.category} disabled in preferences`
+        );
+        // Still create notification in DB for audit purposes, but mark as not sent
+        const notification = await this.createNotification({
+          ...options,
+          sendPush: false,
+          sendEmail: false,
+        });
+        return notification;
+      }
 
       // Create notification in DB
       const notification = await this.createNotification(options);
@@ -138,18 +226,19 @@ class NotificationService {
       if (options.sendPush !== false && prefs?.pushEnabled !== false) {
         try {
           // Get user's active devices
-          const devices = await DeviceModel.find({ 
-            auth: options.userId, 
-            isActive: true 
+          const devices = await DeviceModel.find({
+            auth: options.userId,
+            isActive: true,
           });
 
           if (devices.length > 0) {
             // Convert metadata to string format for FCM data payload
             const dataPayload: Record<string, string> = {};
             if (options.metadata) {
-              Object.keys(options.metadata).forEach(key => {
+              Object.keys(options.metadata).forEach((key) => {
                 const value = options.metadata![key];
-                dataPayload[key] = typeof value === 'string' ? value : JSON.stringify(value);
+                dataPayload[key] =
+                  typeof value === "string" ? value : JSON.stringify(value);
               });
             }
             dataPayload.notificationId = (notification._id as any).toString();
@@ -157,33 +246,39 @@ class NotificationService {
 
             // Send to all devices
             // Send to all devices
-            const pushPromises = devices.map(device => 
+            const pushPromises = devices.map((device) =>
               this.sendPushNotification({
                 token: device.deviceToken,
                 title: options.title,
                 body: options.body,
                 data: dataPayload,
                 imageUrl: options.imageUrl,
-                priority: options.priority === 'high' ? 'high' : 'normal'
-              }).catch(err => {
+                priority: options.priority === "high" ? "high" : "normal",
+              }).catch((err) => {
                 console.error(`Failed to send to device ${device._id}:`, err);
                 // If token is invalid, mark device as inactive
-                if (err.code === 'messaging/invalid-registration-token' || 
-                    err.code === 'messaging/registration-token-not-registered') {
-                  DeviceModel.updateOne({ _id: device._id }, { isActive: false }).exec();
+                if (
+                  err.code === "messaging/invalid-registration-token" ||
+                  err.code === "messaging/registration-token-not-registered"
+                ) {
+                  DeviceModel.updateOne(
+                    { _id: device._id },
+                    { isActive: false }
+                  ).exec();
                 }
                 return null;
               })
             );
 
             const results = await Promise.allSettled(pushPromises);
-            const successCount = results.filter(r => 
-              r.status === 'fulfilled' && 
-              r.value && 
-              r.value !== 'fcm-disabled' && 
-              r.value !== 'messaging-unavailable'
+            const successCount = results.filter(
+              (r) =>
+                r.status === "fulfilled" &&
+                r.value &&
+                r.value !== "fcm-disabled" &&
+                r.value !== "messaging-unavailable"
             ).length;
-            console.log('🔍 Success count:', successCount);
+            console.log("🔍 Success count:", successCount);
 
             // If FCM is disabled, still mark as sent for database consistency
             if (successCount > 0 || !isFCMEnabled()) {
@@ -195,14 +290,14 @@ class NotificationService {
             }
           }
         } catch (pushError) {
-          console.error('Error sending push notification:', pushError);
+          console.error("Error sending push notification:", pushError);
           // Continue even if push fails - DB notification is created
         }
       }
 
       return notification;
     } catch (error) {
-      console.error('Error in sendToUser:', error);
+      console.error("Error in sendToUser:", error);
       throw error;
     }
   }
@@ -210,25 +305,31 @@ class NotificationService {
   /**
    * Send notification to multiple users by role
    */
-  async sendToRole(role: UserRole, options: Omit<CreateNotificationOptions, 'userId'>): Promise<void> {
+  async sendToRole(
+    role: UserRole,
+    options: Omit<CreateNotificationOptions, "userId">
+  ): Promise<void> {
     try {
       // Find all users with the specified role
       const users = await AuthModel.find({ role, isActive: true });
 
       // Send to each user
-      const promises = users.map(user => 
+      const promises = users.map((user) =>
         this.sendToUser({
           ...options,
-          userId: user._id.toString()
-        }).catch(err => {
-          console.error(`Failed to send notification to user ${user._id}:`, err);
+          userId: user._id.toString(),
+        }).catch((err) => {
+          console.error(
+            `Failed to send notification to user ${user._id}:`,
+            err
+          );
           return null;
         })
       );
 
       await Promise.all(promises);
     } catch (error) {
-      console.error('Error in sendToRole:', error);
+      console.error("Error in sendToRole:", error);
       throw error;
     }
   }
@@ -254,10 +355,10 @@ class NotificationService {
     await this.sendToUser({
       userId,
       category: NotificationCategory.BOOKING_CONFIRMATION,
-      title: '🎫 Booking Confirmed!',
+      title: "🎫 Booking Confirmed!",
       body: `Your trip from ${bookingData.origin} to ${bookingData.destination} is confirmed. Booking ref: ${bookingData.bookingRef}`,
       metadata: {
-        screen: 'BookingDetails',
+        screen: "BookingDetails",
         params: { bookingId: bookingData.bookingId },
         bookingId: bookingData.bookingId,
         tripId: bookingData.tripId,
@@ -268,10 +369,10 @@ class NotificationService {
         destination: bookingData.destination,
         seatNumbers: bookingData.seatNumbers,
         amount: bookingData.amount,
-        currency: bookingData.currency
+        currency: bookingData.currency,
       },
-      priority: 'high',
-      sendPush: true
+      priority: "high",
+      sendPush: true,
     });
   }
 
@@ -291,19 +392,22 @@ class NotificationService {
     await this.sendToUser({
       userId,
       category: NotificationCategory.PAYMENT_RECEIPT,
-      title: '💳 Payment Successful',
+      title: "💳 Payment Successful",
       body: `Payment of ${paymentData.currency} ${paymentData.amount} received for booking ${paymentData.bookingRef}`,
       metadata: {
-        screen: 'PaymentReceipt',
-        params: { paymentId: paymentData.paymentId, bookingId: paymentData.bookingId },
+        screen: "PaymentReceipt",
+        params: {
+          paymentId: paymentData.paymentId,
+          bookingId: paymentData.bookingId,
+        },
         paymentId: paymentData.paymentId,
         bookingId: paymentData.bookingId,
         bookingRef: paymentData.bookingRef,
         amount: paymentData.amount,
-        currency: paymentData.currency
+        currency: paymentData.currency,
       },
-      priority: 'normal',
-      sendPush: true
+      priority: "normal",
+      sendPush: true,
     });
   }
 
@@ -312,7 +416,10 @@ class NotificationService {
    */
   async sendTripReminder(
     userId: string,
-    reminderType: 'trip_reminder_24h' | 'trip_reminder_2h' | 'trip_reminder_30m',
+    reminderType:
+      | "trip_reminder_24h"
+      | "trip_reminder_2h"
+      | "trip_reminder_30m",
     tripData: {
       bookingRef: string;
       origin: string;
@@ -324,18 +431,21 @@ class NotificationService {
     }
   ): Promise<void> {
     const timeMap = {
-      trip_reminder_24h: '24 hours',
-      trip_reminder_2h: '2 hours',
-      trip_reminder_30m: '30 minutes'
+      trip_reminder_24h: "24 hours",
+      trip_reminder_2h: "2 hours",
+      trip_reminder_30m: "30 minutes",
     };
 
     await this.sendToUser({
       userId,
-      category: NotificationCategory[reminderType.toUpperCase() as keyof typeof NotificationCategory],
+      category:
+        NotificationCategory[
+          reminderType.toUpperCase() as keyof typeof NotificationCategory
+        ],
       title: `⏰ Trip Reminder - ${timeMap[reminderType]}`,
       body: `Your trip from ${tripData.origin} to ${tripData.destination} departs in ${timeMap[reminderType]}`,
       metadata: {
-        screen: 'BookingDetails',
+        screen: "BookingDetails",
         params: { bookingId: tripData.bookingId },
         bookingId: tripData.bookingId,
         tripId: tripData.tripId,
@@ -343,10 +453,10 @@ class NotificationService {
         departureTime: tripData.departureTime,
         origin: tripData.origin,
         destination: tripData.destination,
-        seatNumbers: tripData.seatNumbers
+        seatNumbers: tripData.seatNumbers,
       },
-      priority: 'high',
-      sendPush: true
+      priority: "high",
+      sendPush: true,
     });
   }
 
@@ -369,10 +479,12 @@ class NotificationService {
     await this.sendToUser({
       userId,
       category: NotificationCategory.SCHEDULE_CHANGE,
-      title: '📅 Schedule Changed',
-      body: `Your trip from ${changeData.origin} to ${changeData.destination} has been rescheduled. ${changeData.reason || ''}`,
+      title: "📅 Schedule Changed",
+      body: `Your trip from ${changeData.origin} to ${
+        changeData.destination
+      } has been rescheduled. ${changeData.reason || ""}`,
       metadata: {
-        screen: 'BookingDetails',
+        screen: "BookingDetails",
         params: { bookingId: changeData.bookingId },
         bookingId: changeData.bookingId,
         tripId: changeData.tripId,
@@ -381,10 +493,10 @@ class NotificationService {
         destination: changeData.destination,
         oldDepartureTime: changeData.oldDepartureTime,
         newDepartureTime: changeData.newDepartureTime,
-        reason: changeData.reason
+        reason: changeData.reason,
       },
-      priority: 'high',
-      sendPush: true
+      priority: "high",
+      sendPush: true,
     });
   }
 
@@ -394,7 +506,7 @@ class NotificationService {
   async sendEmergencyNotification(
     userIds: string[],
     emergencyData: {
-      type: 'weather' | 'cancellation' | 'safety';
+      type: "weather" | "cancellation" | "safety";
       title: string;
       message: string;
       affectedRoutes?: string[];
@@ -404,25 +516,28 @@ class NotificationService {
     const categoryMap = {
       weather: NotificationCategory.EMERGENCY_WEATHER,
       cancellation: NotificationCategory.EMERGENCY_CANCELLATION,
-      safety: NotificationCategory.EMERGENCY_SAFETY
+      safety: NotificationCategory.EMERGENCY_SAFETY,
     };
 
-    const promises = userIds.map(userId =>
+    const promises = userIds.map((userId) =>
       this.sendToUser({
         userId,
         category: categoryMap[emergencyData.type],
         title: `⚠️ ${emergencyData.title}`,
         body: emergencyData.message,
         metadata: {
-          screen: 'EmergencyAlert',
+          screen: "EmergencyAlert",
           params: {},
           affectedRoutes: emergencyData.affectedRoutes,
-          alternativeOptions: emergencyData.alternativeOptions
+          alternativeOptions: emergencyData.alternativeOptions,
         },
-        priority: 'high',
-        sendPush: true
-      }).catch(err => {
-        console.error(`Failed to send emergency notification to user ${userId}:`, err);
+        priority: "high",
+        sendPush: true,
+      }).catch((err) => {
+        console.error(
+          `Failed to send emergency notification to user ${userId}:`,
+          err
+        );
         return null;
       })
     );
@@ -433,24 +548,22 @@ class NotificationService {
   /**
    * Send admin notification for bus capacity
    */
-  async sendBusCapacityAlert(
-    tripData: {
-      tripId: string;
-      routeId: string;
-      origin: string;
-      destination: string;
-      departureTime: Date;
-      totalSeats: number;
-      bookedSeats: number;
-      capacityPercentage: number;
-    }
-  ): Promise<void> {
+  async sendBusCapacityAlert(tripData: {
+    tripId: string;
+    routeId: string;
+    origin: string;
+    destination: string;
+    departureTime: Date;
+    totalSeats: number;
+    bookedSeats: number;
+    capacityPercentage: number;
+  }): Promise<void> {
     await this.sendToRole(UserRole.SUPER_ADMIN, {
       category: NotificationCategory.ADMIN_BUS_CAPACITY,
-      title: '🚌 High Bus Capacity Alert',
+      title: "🚌 High Bus Capacity Alert",
       body: `Route ${tripData.origin} to ${tripData.destination} is ${tripData.capacityPercentage}% full (${tripData.bookedSeats}/${tripData.totalSeats} seats)`,
       metadata: {
-        screen: 'TripManagement',
+        screen: "TripManagement",
         params: { tripId: tripData.tripId },
         tripId: tripData.tripId,
         routeId: tripData.routeId,
@@ -460,20 +573,22 @@ class NotificationService {
         busCapacity: tripData.totalSeats,
         currentBookings: tripData.bookedSeats,
         // Add busId and departureDate for duplicate checking
-        busId: tripData.tripId.split('-')[0], // Extract busId from tripId if format is busId-date
-        departureDate: tripData.departureTime ? new Date(tripData.departureTime).toISOString().split('T')[0] : undefined
+        busId: tripData.tripId.split("-")[0], // Extract busId from tripId if format is busId-date
+        departureDate: tripData.departureTime
+          ? new Date(tripData.departureTime).toISOString().split("T")[0]
+          : undefined,
       },
-      priority: 'high',
-      sendPush: true
+      priority: "high",
+      sendPush: true,
     });
 
     // Also send to managers
     await this.sendToRole(UserRole.MANAGER, {
       category: NotificationCategory.ADMIN_BUS_CAPACITY,
-      title: '🚌 High Bus Capacity Alert',
+      title: "🚌 High Bus Capacity Alert",
       body: `Route ${tripData.origin} to ${tripData.destination} is ${tripData.capacityPercentage}% full. Consider adding another bus.`,
       metadata: {
-        screen: 'TripManagement',
+        screen: "TripManagement",
         params: { tripId: tripData.tripId },
         tripId: tripData.tripId,
         routeId: tripData.routeId,
@@ -483,11 +598,13 @@ class NotificationService {
         busCapacity: tripData.totalSeats,
         currentBookings: tripData.bookedSeats,
         // Add busId and departureDate for duplicate checking
-        busId: tripData.tripId.split('-')[0], // Extract busId from tripId if format is busId-date
-        departureDate: tripData.departureTime ? new Date(tripData.departureTime).toISOString().split('T')[0] : undefined
+        busId: tripData.tripId.split("-")[0], // Extract busId from tripId if format is busId-date
+        departureDate: tripData.departureTime
+          ? new Date(tripData.departureTime).toISOString().split("T")[0]
+          : undefined,
       },
-      priority: 'high',
-      sendPush: true
+      priority: "high",
+      sendPush: true,
     });
   }
 
@@ -508,11 +625,11 @@ class NotificationService {
     const skip = (page - 1) * limit;
 
     const query: any = { user: userId };
-    
+
     if (options.unreadOnly) {
       query.readAt = { $exists: false };
     }
-    
+
     if (options.category) {
       query.category = options.category;
     }
@@ -523,7 +640,7 @@ class NotificationService {
         .skip(skip)
         .limit(limit)
         .lean(),
-      Notification.countDocuments(query)
+      Notification.countDocuments(query),
     ]);
 
     return {
@@ -532,8 +649,8 @@ class NotificationService {
         page,
         limit,
         total,
-        pages: Math.ceil(total / limit)
-      }
+        pages: Math.ceil(total / limit),
+      },
     };
   }
 
@@ -543,9 +660,9 @@ class NotificationService {
   async markAsRead(notificationId: string, userId: string): Promise<void> {
     await Notification.updateOne(
       { _id: notificationId, user: userId },
-      { 
+      {
         readAt: new Date(),
-        deliveryStatus: DeliveryStatus.SEEN
+        deliveryStatus: DeliveryStatus.SEEN,
       }
     );
   }
@@ -556,9 +673,9 @@ class NotificationService {
   async markAllAsRead(userId: string): Promise<void> {
     await Notification.updateMany(
       { user: userId, readAt: { $exists: false } },
-      { 
+      {
         readAt: new Date(),
-        deliveryStatus: DeliveryStatus.SEEN
+        deliveryStatus: DeliveryStatus.SEEN,
       }
     );
   }
@@ -569,14 +686,17 @@ class NotificationService {
   async getUnreadCount(userId: string): Promise<number> {
     return await Notification.countDocuments({
       user: userId,
-      readAt: { $exists: false }
+      readAt: { $exists: false },
     });
   }
 
   /**
    * Delete notification
    */
-  async deleteNotification(notificationId: string, userId: string): Promise<void> {
+  async deleteNotification(
+    notificationId: string,
+    userId: string
+  ): Promise<void> {
     await Notification.deleteOne({ _id: notificationId, user: userId });
   }
 
@@ -587,11 +707,11 @@ class NotificationService {
   async processScheduledNotifications(): Promise<void> {
     try {
       const now = new Date();
-      
+
       // Find notifications that are scheduled and not sent yet
       const scheduledNotifications = await Notification.find({
         scheduledFor: { $lte: now },
-        isSent: false
+        isSent: false,
       });
 
       for (const notification of scheduledNotifications) {
@@ -606,7 +726,7 @@ class NotificationService {
               imageUrl: notification.imageUrl,
               metadata: notification.metadata,
               priority: notification.priority,
-              sendPush: true
+              sendPush: true,
             });
 
             // Mark original as sent
@@ -615,11 +735,14 @@ class NotificationService {
             await notification.save();
           }
         } catch (error) {
-          console.error(`Error processing scheduled notification ${notification._id}:`, error);
+          console.error(
+            `Error processing scheduled notification ${notification._id}:`,
+            error
+          );
         }
       }
     } catch (error) {
-      console.error('Error processing scheduled notifications:', error);
+      console.error("Error processing scheduled notifications:", error);
     }
   }
 
@@ -649,22 +772,23 @@ class NotificationService {
           userId,
           bookingData: {
             ...bookingData,
-            departureTime: bookingData.departureTime instanceof Date 
-              ? bookingData.departureTime.toISOString() 
-              : bookingData.departureTime
-          }
+            departureTime:
+              bookingData.departureTime instanceof Date
+                ? bookingData.departureTime.toISOString()
+                : bookingData.departureTime,
+          },
         },
         {
           attempts: 3,
           backoff: {
-            type: 'exponential',
+            type: "exponential",
             delay: 2000,
           },
         }
       );
       console.log(`📬 Booking confirmation queued for user ${userId}`);
     } catch (error) {
-      console.error('Error queueing booking confirmation:', error);
+      console.error("Error queueing booking confirmation:", error);
       // Don't throw - notification failure shouldn't break the booking flow
     }
   }
@@ -688,19 +812,19 @@ class NotificationService {
         JobName.SEND_PAYMENT_RECEIPT,
         {
           userId,
-          paymentData
+          paymentData,
         },
         {
           attempts: 3,
           backoff: {
-            type: 'exponential',
+            type: "exponential",
             delay: 2000,
           },
         }
       );
       console.log(`📬 Payment receipt queued for user ${userId}`);
     } catch (error) {
-      console.error('Error queueing payment receipt:', error);
+      console.error("Error queueing payment receipt:", error);
       // Don't throw - notification failure shouldn't break the payment flow
     }
   }
@@ -717,25 +841,27 @@ class NotificationService {
           userId: options.userId,
           options: {
             ...options,
-            scheduledFor: options.scheduledFor instanceof Date 
-              ? options.scheduledFor.toISOString() 
-              : options.scheduledFor,
-            expiresAt: options.expiresAt instanceof Date 
-              ? options.expiresAt.toISOString() 
-              : options.expiresAt,
-          }
+            scheduledFor:
+              options.scheduledFor instanceof Date
+                ? options.scheduledFor.toISOString()
+                : options.scheduledFor,
+            expiresAt:
+              options.expiresAt instanceof Date
+                ? options.expiresAt.toISOString()
+                : options.expiresAt,
+          },
         },
         {
           attempts: 3,
           backoff: {
-            type: 'exponential',
+            type: "exponential",
             delay: 2000,
           },
         }
       );
       console.log(`📬 Notification queued for user ${options.userId}`);
     } catch (error) {
-      console.error('Error queueing notification to user:', error);
+      console.error("Error queueing notification to user:", error);
       // Don't throw - notification failure shouldn't break the flow
     }
   }
@@ -744,26 +870,34 @@ class NotificationService {
    * Queue notification to role (non-blocking)
    * This queues notifications for all users with the specified role
    */
-  async queueToRole(role: UserRole, options: Omit<CreateNotificationOptions, 'userId'>): Promise<void> {
+  async queueToRole(
+    role: UserRole,
+    options: Omit<CreateNotificationOptions, "userId">
+  ): Promise<void> {
     try {
       // Find all users with the specified role
       const users = await AuthModel.find({ role, isActive: true });
-      
+
       // Queue a notification job for each user
-      const queuePromises = users.map(user =>
+      const queuePromises = users.map((user) =>
         this.queueToUser({
           ...options,
-          userId: user._id.toString()
-        }).catch(err => {
-          console.error(`Failed to queue notification to user ${user._id}:`, err);
+          userId: user._id.toString(),
+        }).catch((err) => {
+          console.error(
+            `Failed to queue notification to user ${user._id}:`,
+            err
+          );
           return null;
         })
       );
 
       await Promise.all(queuePromises);
-      console.log(`📬 Notifications queued for ${users.length} users with role ${role}`);
+      console.log(
+        `📬 Notifications queued for ${users.length} users with role ${role}`
+      );
     } catch (error) {
-      console.error('Error queueing notifications to role:', error);
+      console.error("Error queueing notifications to role:", error);
       // Don't throw - notification failure shouldn't break the flow
     }
   }
@@ -775,7 +909,7 @@ class NotificationService {
   async queueEmergencyNotification(
     userIds: string[],
     emergencyData: {
-      type: 'weather' | 'cancellation' | 'safety';
+      type: "weather" | "cancellation" | "safety";
       title: string;
       message: string;
       affectedRoutes?: string[];
@@ -786,38 +920,42 @@ class NotificationService {
       const categoryMap = {
         weather: NotificationCategory.EMERGENCY_WEATHER,
         cancellation: NotificationCategory.EMERGENCY_CANCELLATION,
-        safety: NotificationCategory.EMERGENCY_SAFETY
+        safety: NotificationCategory.EMERGENCY_SAFETY,
       };
 
       // Queue a notification job for each user
-      const queuePromises = userIds.map(userId =>
+      const queuePromises = userIds.map((userId) =>
         this.queueToUser({
           userId,
           category: categoryMap[emergencyData.type],
           title: `⚠️ ${emergencyData.title}`,
           body: emergencyData.message,
           metadata: {
-            screen: 'EmergencyAlert',
+            screen: "EmergencyAlert",
             params: {},
             affectedRoutes: emergencyData.affectedRoutes,
-            alternativeOptions: emergencyData.alternativeOptions
+            alternativeOptions: emergencyData.alternativeOptions,
           },
-          priority: 'high',
-          sendPush: true
-        }).catch(err => {
-          console.error(`Failed to queue emergency notification to user ${userId}:`, err);
+          priority: "high",
+          sendPush: true,
+        }).catch((err) => {
+          console.error(
+            `Failed to queue emergency notification to user ${userId}:`,
+            err
+          );
           return null;
         })
       );
 
       await Promise.all(queuePromises);
-      console.log(`📬 Emergency notifications queued for ${userIds.length} users`);
+      console.log(
+        `📬 Emergency notifications queued for ${userIds.length} users`
+      );
     } catch (error) {
-      console.error('Error queueing emergency notifications:', error);
+      console.error("Error queueing emergency notifications:", error);
       // Don't throw - notification failure shouldn't break the flow
     }
   }
 }
 
 export default new NotificationService();
-

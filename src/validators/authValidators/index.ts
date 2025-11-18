@@ -40,6 +40,11 @@ export const loginSchema: ZodSchema<{
   }),
   deviceToken: z.string(),
 });
+export const logoutSchema: ZodSchema<{
+  deviceToken: string;
+}> = z.object({
+  deviceToken: z.string(),
+});
 
 export const otpVerifySchema: ZodSchema<{
   userId: string;

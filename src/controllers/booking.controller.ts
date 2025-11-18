@@ -336,7 +336,7 @@ export const bookSeats = async (req: CustomRequest, res: Response) => {
         type: tripType, // Assuming one way trip
         From: (getRoutPrice as any)?.origin?.name || "Origin",
         To: (getRoutPrice as any)?.destination?.name || "Destination",
-        DepartureDate: new Date(departureDate) || (getRoutPrice as any)?.departureTime || new Date(),
+        DepartureDate: new Date(departureDate),
         ReturnDate: tripType === TripType.ROUND_TRIP ? new Date(roundTripDate) : null, // Set appropriate return date
       });
       passengersDB.push(create)

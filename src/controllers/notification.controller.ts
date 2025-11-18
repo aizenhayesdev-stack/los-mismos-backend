@@ -131,9 +131,24 @@ export class NotificationController {
       const userId = req.authId;
       const preferences = req.body;
 
-      const profile = await Profile.findByIdAndUpdate(
-        userId,
-        { notificationPreferences: preferences },
+      // Validate preference fields
+      const validPreferences = [
+        'pushEnabled', 'emailEnabled', 'smsEnabled',
+        'bookingConfirmations', 'tripReminders', 'scheduleChanges', 
+        'emergencyAlerts', 'promotions',
+        'reminder24h', 'reminder2h', 'reminder30m'
+      ];
+
+      const filteredPreferences: any = {};
+      Object.keys(preferences).forEach(key => {
+        if (validPreferences.includes(key)) {
+          filteredPreferences[key] = Boolean(preferences[key]);
+        }
+      });
+
+      const profile = await Profile.findOneAndUpdate(
+        { auth: userId },
+        { notificationPreferences: filteredPreferences },
         { new: true, runValidators: true }
       );
 
@@ -251,13 +266,16 @@ export class NotificationController {
   async sendTestNotification(req: CustomRequest, res: Response) {
     try {
       const userId = req.authId;
+      const { category } = req.body;
+
+      const testCategory = category || NotificationCategory.BOOKING_CONFIRMATION;
 
       // Queue test notification (non-blocking)
       await notificationService.queueToUser({
         userId,
-        category: NotificationCategory.BOOKING_CONFIRMATION,
+        category: testCategory,
         title: 'Test Notification',
-        body: 'This is a test notification from Los Mismos',
+        body: `This is a test ${testCategory} notification from Los Mismos`,
         priority: 'normal',
         sendPush: true
       });

@@ -10,7 +10,7 @@ export const checkAdminAuth = (
     res: Response,
     next: NextFunction
 ) => {
-    const tokenHeader = req.headers["authorization"];
+    const tokenHeader = req.headers["authorization"] || req.headers["Authorization"] as string;
     console.log(req.url);
 
     if (!tokenHeader) {

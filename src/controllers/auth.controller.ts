@@ -1229,6 +1229,22 @@ const verifyAppleToken = async (token: string) => {
   }
 };
 
+export const logout = async (req: Request, res: Response) => {
+  try {
+    const customReq = req as CustomRequest;
+    const { authId } = customReq;
+    const { deviceToken } = req.body;
+    if (!authId) {
+      throw new CustomError(STATUS_CODES.NOT_FOUND, AUTH_CONSTANTS.USER_NOT_FOUND);
+    }
+    await DeviceModel.deleteOne({ auth: authId, deviceToken });
+    return ResponseUtil.successResponse(res, STATUS_CODES.SUCCESS, {}, AUTH_CONSTANTS.LOGGED_OUT);
+  } catch (err) {
+    if (err instanceof CustomError)
+      return ResponseUtil.errorResponse(res, err.statusCode, err.message);
+    ResponseUtil.handleError(res, err);
+  }
+};
 // export const forgetAccount = async (req: Request, res: Response) => {
 //   try {
 //     let { email } = req.body;

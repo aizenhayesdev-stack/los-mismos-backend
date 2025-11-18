@@ -155,7 +155,6 @@ async function handlePaymentSuccess(paymentIntent: Stripe.PaymentIntent) {
         salesOffice: salesOffice,
         busId: getBus._id,
         for: forType,
-        departureDate: new Date(departureDate),
         ticketNumber: `TKT-${Date.now()}-${i}`,
         groupTicketSerial: groupTicketSerial,
         fullName: passenger.fullName,
@@ -166,7 +165,7 @@ async function handlePaymentSuccess(paymentIntent: Stripe.PaymentIntent) {
         type: tripType,
         From: (getRoutePrice as any)?.origin?.name || "Origin",
         To: (getRoutePrice as any)?.destination?.name || "Destination",
-        DepartureDate: (getRoutePrice as any)?.departureTime || new Date(),
+        DepartureDate: new Date(departureDate),
         paymentIntentId: paymentIntent.id,
         ReturnDate: tripType === "round_trip" ? new Date(roundTripDate) : null,
         additionalBaggage: additionalBaggage,
@@ -243,13 +242,13 @@ async function handlePaymentSuccess(paymentIntent: Stripe.PaymentIntent) {
 
       // Emit seat status change to all users in the route room
       //v1
-      io.to(`route:${routeId}`).emit('seat:status:changed', {
-        routeId: routeId,
-        seatLabel: seat.seatLabel,
-        status: SeatStatus.BOOKED,
-        userId: userId,
-        busId: busId
-      });
+      // io.to(`route:${routeId}`).emit('seat:status:changed', {
+      //   routeId: routeId,
+      //   seatLabel: seat.seatLabel,
+      //   status: SeatStatus.BOOKED,
+      //   userId: userId,
+      //   busId: busId
+      // });
       //v2
       io.to(`route:${routeId}:${departureDate}`).emit('seat:status:changed', {
         routeId: routeId,
@@ -287,13 +286,13 @@ async function handlePaymentSuccess(paymentIntent: Stripe.PaymentIntent) {
 
         // Emit seat status change for return route
         //v1
-        io.to(`route:${returnRouteId}`).emit('seat:status:changed', {
-          routeId: returnRouteId,
-          seatLabel: seat.seatLabel,
-          status: SeatStatus.BOOKED,
-          userId: userId,
-          busId: returnBusId
-        });
+        // io.to(`route:${returnRouteId}`).emit('seat:status:changed', {
+        //   routeId: returnRouteId,
+        //   seatLabel: seat.seatLabel,
+        //   status: SeatStatus.BOOKED,
+        //   userId: userId,
+        //   busId: returnBusId
+        // });
         //v2
         io.to(`route:${returnRouteId}:${roundTripDate}`).emit('seat:status:changed', {
           routeId: returnRouteId,

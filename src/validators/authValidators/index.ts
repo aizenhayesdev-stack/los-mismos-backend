@@ -225,3 +225,19 @@ export const autoLoginSchema: ZodSchema<{
 }> = z.object({
   token: z.string().min(1,"token is requiredf").max(255),
 });
+
+export const socialLoginSchema: ZodSchema<{
+  access_token: string;
+  provider: string;
+  device_token: string;
+  platform: string;
+  role: UserRole;
+}> = z.object({
+  access_token: z.string().min(1,"access_token is required").max(255),
+  provider: z.string().min(1,"provider is required").max(255),
+  device_token: z.string().min(1,"device_token is required").max(255),
+  platform: z.string().min(1,"platform is required").max(255),
+  role: z.nativeEnum(UserRole, {
+    errorMap: () => ({ message: `Invalid role` }),
+  }),
+});

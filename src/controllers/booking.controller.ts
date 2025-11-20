@@ -20,6 +20,7 @@ import { TicketPDFGenerator, TicketPDFData } from "../utils/PDF/ticketPDFGenerat
 import { calculatePassengerFare, calculateFare } from "../utils/pricing";
 import { departureDateSeatService } from "../services/departure-date-seat.service";
 import tripReminderService from "../services/trip-reminder.service";
+import notificationService from "../services/notification.service";
 
 export const bookSeats = async (req: CustomRequest, res: Response) => {
   try {
@@ -300,15 +301,341 @@ export const bookSeats = async (req: CustomRequest, res: Response) => {
       );
     }
     else if (paymentType === "points") {
-      // Check if user has enough points
-      const user = await AuthModel.findById(userId);
+      // Get user with populated profile to check refundAmount
+      const user = await AuthModel.findById(userId).populate('profile');
       if (!user) {
         return ResponseUtil.errorResponse(res, STATUS_CODES.BAD_REQUEST, "User not found");
       }
-      if ((user.profile as any)?.refundAmount < getTotalPrice) {
+
+      const userProfile = await Profile.findOne({ auth: userId });
+      if (!userProfile) {
+        return ResponseUtil.errorResponse(res, STATUS_CODES.BAD_REQUEST, "User profile not found");
+      }
+
+      const refundAmount = userProfile.refundAmount || 0;
+      
+      // Check if user has any points at all
+      if (refundAmount <= 0) {
         return ResponseUtil.errorResponse(res, STATUS_CODES.BAD_REQUEST, "Insufficient points");
       }
-      
+
+      // If refundAmount >= total amount, create free booking and deduct points
+      if (refundAmount >= getTotalPrice) {
+        // Create booking similar to cash payment flow
+        let forType = ForWho.SELF;
+        let groupTicketSerial = null;
+        const passengersDB = [];
+        
+        if (passengers.length > 1) {
+          forType = ForWho.FAMILY;
+          groupTicketSerial = `TKT-${Date.now()}-${passengers.length}`;
+        }
+        if (tripType === TripType.ROUND_TRIP) {
+          forType = ForWho.FAMILY;
+          groupTicketSerial = `TKT-${Date.now()}-${passengers.length}-RT`;
+        }
+
+        // Create outbound trip passengers
+        for (let i = 0; i < passengers.length; i++) {
+          const passenger = passengers[i];
+
+          const create = await PassengerModel.create({
+            price: baseFare,
+            user: userId,
+            office: office,
+            salesOffice: salesOffice,
+            bookedBy: bookedBy,
+            seatLabel: passenger.seatLabel,
+            busId: getBus._id?.toString() || busId,
+            for: forType,
+            ticketNumber: `TKT-${Date.now()}-${i}`,
+            groupTicketSerial: groupTicketSerial,
+            additionalBaggage: parseFloat(additionalBaggage || "0") * 4.6,
+            fullName: passenger.fullName,
+            gender: passenger.gender,
+            dob: passenger.dob,
+            contactNumber: passenger.contactNumber,
+            DocumentId: passenger.DocumentId,
+            type: tripType,
+            From: (getRoutPrice as any)?.origin?.name || "Origin",
+            To: (getRoutPrice as any)?.destination?.name || "Destination",
+            DepartureDate: new Date(departureDate),
+            ReturnDate: tripType === TripType.ROUND_TRIP ? new Date(roundTripDate) : null,
+          });
+          passengersDB.push(create);
+        }
+
+        // Create return trip passengers for round trip
+        if (tripType === TripType.ROUND_TRIP && returnRoute && returnBus) {
+          for (let i = 0; i < passengers.length; i++) {
+            const passenger = passengers[i];
+
+            const returnPassenger = await PassengerModel.create({
+              price: baseFare,
+              user: userId,
+              office: office,
+              salesOffice: salesOffice,
+              bookedBy: bookedBy,
+              seatLabel: passenger.seatLabel,
+              busId: returnBus._id?.toString() || returnRoute.bus,
+              for: forType,
+              ticketNumber: `TKT-${Date.now()}-${i}-RT`,
+              departureDate: new Date(roundTripDate),
+              groupTicketSerial: groupTicketSerial,
+              additionalBaggage: parseFloat(additionalBaggage || "0") * 4.6,
+              fullName: passenger.fullName,
+              gender: passenger.gender,
+              dob: passenger.dob,
+              contactNumber: passenger.contactNumber,
+              DocumentId: passenger.DocumentId,
+              type: tripType,
+              From: (returnRoute as any)?.origin?.name || "Origin",
+              To: (returnRoute as any)?.destination?.name || "Destination",
+              DepartureDate: new Date(roundTripDate),
+              ReturnDate: null,
+            });
+            passengersDB.push(returnPassenger);
+          }
+        }
+
+        // Update outbound bus seat status to BOOKED
+        for (const passenger of passengersDB) {
+          if (!passenger.seatLabel) continue;
+
+          const bookingResult = await departureDateSeatService.bookSeatForDate(
+            getBus._id?.toString() || busId,
+            passenger.seatLabel,
+            new Date(departureDate),
+            userId as string,
+            passenger._id?.toString() || ''
+          );
+
+          if (!bookingResult.success) {
+            console.error(`Failed to book seat ${passenger.seatLabel}:`, bookingResult.reason);
+          }
+
+          // Delete the Redis hold for this seat
+          const departureDateStr = new Date(departureDate).toISOString().split('T')[0];
+          const holdKey = RedisKeys.seatHold(routeId as string, passenger.seatLabel, departureDateStr);
+          await redis.del(holdKey);
+
+          // Remove from user holds set
+          await redis.srem(RedisKeys.userHolds(userId as string), `${routeId}:${passenger.seatLabel}:${departureDateStr}`);
+
+          // Emit seat status change
+          io.to(`route:${routeId}`).emit('seat:status:changed', {
+            routeId: routeId,
+            seatLabel: passenger.seatLabel,
+            status: SeatStatus.BOOKED,
+            userId: userId,
+            busId: busId,
+            departureDate: departureDateStr
+          });
+
+          io.to(`route:${routeId}:${departureDate}`).emit('seat:status:changed', {
+            routeId: routeId,
+            seatLabel: passenger.seatLabel,
+            status: SeatStatus.BOOKED,
+            userId: userId,
+            busId: busId,
+            departureDate: departureDateStr
+          });
+        }
+
+        // Update return trip bus seat status to BOOKED for round trip
+        if (tripType === TripType.ROUND_TRIP && returnBus && passengersDB.length > 0) {
+          const returnPassengers = passengersDB.filter(p => p.ticketNumber?.includes('-RT'));
+          const returnDateStr = new Date(roundTripDate).toISOString().split('T')[0];
+
+          for (const passenger of returnPassengers) {
+            if (!passenger.seatLabel) continue;
+
+            const bookingResult = await departureDateSeatService.bookSeatForDate(
+              returnBus._id?.toString() || (returnRoute as any).bus,
+              passenger.seatLabel,
+              new Date(roundTripDate),
+              userId as string,
+              passenger._id?.toString() || ''
+            );
+
+            if (!bookingResult.success) {
+              console.error(`Failed to book return seat ${passenger.seatLabel}:`, bookingResult.reason);
+            }
+
+            // Emit seat status change for return route
+            io.to(`route:${returnRoute?._id}`).emit('seat:status:changed', {
+              routeId: returnRoute?._id,
+              seatLabel: passenger.seatLabel,
+              status: SeatStatus.BOOKED,
+              userId: userId,
+              busId: returnBus._id,
+              departureDate: returnDateStr
+            });
+
+            io.to(`route:${returnRoute?._id}:${roundTripDate}`).emit('seat:status:changed', {
+              routeId: returnRoute?._id,
+              seatLabel: passenger.seatLabel,
+              status: SeatStatus.BOOKED,
+              userId: userId,
+              busId: returnBus._id,
+              departureDate: returnDateStr
+            });
+          }
+        }
+
+        // Deduct points from user profile after booking confirmation
+        const pointsToDeduct = getTotalPrice;
+        await Profile.findOneAndUpdate(
+          { auth: userId },
+          { $inc: { refundAmount: -pointsToDeduct } }
+        );
+
+        // Generate QR codes for each passenger
+        const passengersWithQR = [];
+        for (const passenger of passengersDB) {
+          const isReturnTrip = passenger.ticketNumber?.includes('-RT');
+          const currentRoute = isReturnTrip ? returnRoute : getRoutPrice;
+          const currentBus = isReturnTrip ? returnBus : getBus;
+
+          const qrCodeData = QRCodeUtils.createBookingQRData({
+            ticketNumber: passenger.ticketNumber,
+          });
+
+          const qrCodeBase64 = await QRCodeUtils.generateQRCodeAsBase64(qrCodeData);
+
+          passenger.qrCode = qrCodeBase64;
+          await passenger.save();
+
+          passengersWithQR.push({
+            ...passenger.toObject(),
+            qrCode: {
+              data: qrCodeBase64,
+              bookingId: qrCodeData.ticketNumber,
+              format: "base64"
+            },
+            isReturnTrip: isReturnTrip
+          });
+        }
+
+        // Queue booking confirmation notification (non-blocking)
+        try {
+          const seatNumbers = passengers.map((p: any) => p.seatLabel);
+          const firstPassenger = passengersDB[0];
+          
+          await notificationService.queueBookingConfirmation(
+            userId,
+            {
+              bookingRef: groupTicketSerial || firstPassenger.ticketNumber,
+              origin: (getRoutPrice as any)?.origin?.name || "Origin",
+              destination: (getRoutPrice as any)?.destination?.name || "Destination",
+              departureTime: new Date(departureDate),
+              seatNumbers: seatNumbers,
+              amount: getTotalPrice,
+              currency: "USD",
+              bookingId: (firstPassenger._id as any).toString(),
+              tripId: routeId,
+              routeId: routeId
+            }
+          );
+
+          console.log('✅ Booking confirmation notification queued successfully');
+        } catch (notifError) {
+          console.error('❌ Error queueing booking confirmation notification:', notifError);
+        }
+
+        return ResponseUtil.successResponse(
+          res,
+          STATUS_CODES.SUCCESS,
+          {
+            passengers: passengersWithQR,
+            type: paymentType,
+            bookingsCount: getUserSeats.length,
+            groupTicketSerial: groupTicketSerial,
+            tripType: tripType,
+            returnTripInfo: tripType === TripType.ROUND_TRIP ? {
+              returnRouteId: returnRoute?._id,
+              returnDate: roundTripDate,
+              returnFrom: (returnRoute as any)?.origin?.name,
+              returnTo: (returnRoute as any)?.destination?.name
+            } : null,
+            pointsDeducted: pointsToDeduct,
+            remainingPoints: refundAmount - pointsToDeduct,
+            message: `Booking confirmed using points. ${pointsToDeduct} points deducted.`
+          },
+          AUTH_CONSTANTS.BOOKING_SUCCESS
+        );
+      } else {
+        // RefundAmount < total amount, create payment intent for remaining amount
+        const remainingAmount = getTotalPrice - refundAmount;
+        const pointsToUse = refundAmount;
+
+        // Add passengers data in redis with unique key
+        const { v4: uuidv4 } = require('uuid');
+        const passengersRedisKey = `booking:passengers:${uuidv4()}`;
+        await redis.set(passengersRedisKey, JSON.stringify(passengers), 'EX', 15 * 60);
+
+        // Store points usage info in redis for webhook processing
+        const pointsInfoKey = `booking:points:${passengersRedisKey}`;
+        await redis.set(pointsInfoKey, JSON.stringify({
+          userId: userId,
+          pointsToUse: pointsToUse,
+          totalAmount: getTotalPrice,
+          remainingAmount: remainingAmount
+        }), 'EX', 15 * 60);
+
+        // Extend seat hold timer
+        const extendedHoldDuration = 20 * 60; // 20 minutes
+        for (const seatLabel of seatLabels) {
+          const departureDateStr = new Date(departureDate).toISOString().split('T')[0];
+          const holdKey = RedisKeys.seatHold(routeId, seatLabel, departureDateStr);
+          const holdData = await redis.get(holdKey);
+
+          if (holdData) {
+            const hold = JSON.parse(holdData);
+            hold.expiresAt = Date.now() + (extendedHoldDuration * 1000);
+            await redis.setex(holdKey, extendedHoldDuration, JSON.stringify(hold));
+          }
+        }
+
+        // Create payment intent for remaining amount
+        const paymentIntent = await createPaymentIntent(remainingAmount + (remainingAmount * 0.10), {
+          routeId: routeId,
+          userId: userId,
+          bookedBy: bookedBy,
+          office: office,
+          salesOffice: salesOffice?.toString() || "",
+          totalPrice: getTotalPrice,
+          pointsUsed: pointsToUse,
+          remainingAmount: remainingAmount + (remainingAmount * 0.10),
+          seats: getUserSeats.length,
+          baseFare: baseFare,
+          busId: getBus._id?.toString() || busId,
+          departureDate: departureDate,
+          passengersRedisKey: passengersRedisKey,
+          pointsInfoKey: pointsInfoKey,
+          additionalBaggage: parseFloat(additionalBaggage || "0") * 4.6,
+          tripType: tripType,
+          returnRouteId: tripType === TripType.ROUND_TRIP ? returnRoute?._id?.toString() : undefined,
+          returnBusId: tripType === TripType.ROUND_TRIP ? returnBus?._id?.toString() : undefined,
+          roundTripDate: tripType === TripType.ROUND_TRIP ? roundTripDate : undefined,
+          paymentType: "points_partial" // Flag to indicate partial points payment
+        });
+
+        return ResponseUtil.successResponse(
+          res,
+          STATUS_CODES.SUCCESS,
+          {
+            clientSecret: paymentIntent.client_secret,
+            paymentIntentId: paymentIntent.id,
+            totalAmount: getTotalPrice,
+            pointsToUse: pointsToUse,
+            remainingAmount: remainingAmount,
+            bookingsCount: getUserSeats.length,
+            data: req.body
+          },
+          `Payment intent created. ${pointsToUse} points will be deducted on successful payment.`
+        );
+      }
     }
     else {
       let forType = ForWho.SELF;

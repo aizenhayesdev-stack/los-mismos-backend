@@ -12,6 +12,7 @@ import { SeatStatus, PaymentGateway, TransactionStatus } from "../models/common/
 import { io } from "../server";
 import notificationService from "../services/notification.service";
 import tripReminderService from "../services/trip-reminder.service";
+import { Profile } from "../models";
 
 const stripe = new Stripe(STRIPE_SECRET_KEY as string);
 
@@ -378,6 +379,33 @@ async function handlePaymentSuccess(paymentIntent: Stripe.PaymentIntent) {
       createdBy: userId
     });
 
+    // Handle points deduction for partial points payment
+    const paymentType = metadata.paymentType;
+    if (paymentType === "points_partial") {
+      const pointsInfoKey = metadata.pointsInfoKey;
+      
+      if (pointsInfoKey) {
+        const pointsInfoStr = await redis.get(pointsInfoKey);
+        if (pointsInfoStr) {
+          const pointsInfo = JSON.parse(pointsInfoStr);
+          const pointsToDeduct = pointsInfo.pointsToUse || 0;
+          
+          if (pointsToDeduct > 0) {
+            // Deduct points from user profile
+            await Profile.findOneAndUpdate(
+              { auth: userId },
+              { $inc: { refundAmount: -pointsToDeduct } }
+            );
+            
+            console.log(`✅ Deducted ${pointsToDeduct} points from user ${userId} after successful payment`);
+            
+            // Clean up points info from Redis
+            await redis.del(pointsInfoKey);
+          }
+        }
+      }
+    }
+
     // Clean up Redis data
     await redis.del(passengersRedisKey);
 
@@ -390,6 +418,22 @@ async function handlePaymentSuccess(paymentIntent: Stripe.PaymentIntent) {
       const seatNumbers = passengersData.map((p: any) => p.seatLabel);
       const firstPassenger = passengersDB[0];
       
+      // Calculate total amount (including points if used)
+      let totalAmount = paymentIntent.amount / 100;
+      let pointsUsed = 0;
+      
+      if (paymentType === "points_partial") {
+        const pointsInfoKey = metadata.pointsInfoKey;
+        if (pointsInfoKey) {
+          const pointsInfoStr = await redis.get(pointsInfoKey);
+          if (pointsInfoStr) {
+            const pointsInfo = JSON.parse(pointsInfoStr);
+            pointsUsed = pointsInfo.pointsToUse || 0;
+            totalAmount = pointsInfo.totalAmount || totalAmount;
+          }
+        }
+      }
+      
       // Queue booking confirmation notification (processed in background)
       await notificationService.queueBookingConfirmation(
         userId,
@@ -399,7 +443,7 @@ async function handlePaymentSuccess(paymentIntent: Stripe.PaymentIntent) {
           destination: (getRoutePrice as any)?.destination?.name || "Destination",
           departureTime: new Date(departureDate),
           seatNumbers: seatNumbers,
-          amount: paymentIntent.amount / 100,
+          amount: totalAmount,
           currency: paymentIntent.currency.toUpperCase(),
           bookingId: (firstPassenger._id as any).toString(),
           tripId: routeId,
@@ -412,7 +456,7 @@ async function handlePaymentSuccess(paymentIntent: Stripe.PaymentIntent) {
         userId,
         {
           bookingRef: groupTicketSerial || firstPassenger.ticketNumber,
-          amount: paymentIntent.amount / 100,
+          amount: totalAmount,
           currency: paymentIntent.currency.toUpperCase(),
           paymentId: paymentIntent.id,
           bookingId: (firstPassenger._id as any).toString()

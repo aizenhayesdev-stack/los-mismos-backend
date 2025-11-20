@@ -158,13 +158,26 @@ export const getCustomerTickets = async (req: CustomRequest, res: Response) => {
  */
 export const getAllTickets = async (req: CustomRequest, res: Response) => {
   try {
-    const { status, generatedBy, page = 1, limit = 10 } = req.query;
-
+    const { status, generatedBy, page = 1, limit = 10,assignedTo } = req.query;
+    const userId = req.authId;
+    if (!userId) {
+      return ResponseUtil.errorResponse(res, STATUS_CODES.UNAUTHORIZED, "User not authenticated");
+    }
     // Build query
     const query: any = {};
 
     if (status) {
       query.status = status;
+    }
+
+    if (assignedTo) {
+      query.assignedTo = assignedTo;
+    }else{
+      // query.$or = [
+      //   { assignedTo: { $exists: false } },
+      //   { assignedTo: null },
+      //   { assignedTo: new mongoose.Types.ObjectId(userId) },
+      // ];
     }
 
     // If generatedBy is provided, search by customer name or email
@@ -484,7 +497,10 @@ export const addComment = async (req: CustomRequest, res: Response) => {
     } else if (userRole === UserRole.MANAGER) {
       authorType = "manager";
     }
-
+    if(userRole !== UserRole.CUSTOMER){
+      const assignedTo = new mongoose.Types.ObjectId(userId);
+      ticket.assignedTo = assignedTo;
+    }
     // Add comment
     ticket.comments.push({
       authorId: new mongoose.Types.ObjectId(userId),

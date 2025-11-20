@@ -52,8 +52,8 @@ export const bookSeatsSchema: ZodSchema<{
   busId: z.string()
     .regex(/^[0-9a-fA-F]{24}$/, "Bus ID must be a valid MongoDB ObjectId"),
   
-  paymentType: z.enum(["cash", "stripe"], {
-    errorMap: () => ({ message: "Payment type must be either 'cash' or 'stripe'" })
+  paymentType: z.enum(["cash", "stripe","points"], {
+    errorMap: () => ({ message: "Payment type must be either 'cash' or 'stripe' or 'points'" })
   }),
   tripType: z.enum([TripType.ONE_WAY, TripType.ROUND_TRIP], {
     errorMap: () => ({ message: "Trip type must be either 'one_way' or 'round_trip'" })

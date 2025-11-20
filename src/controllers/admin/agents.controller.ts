@@ -108,7 +108,17 @@ export const getAgents = async (req: Request, res: Response) => {
     };
 
     if (role) {
-      query.role = role;
+      if (Array.isArray(role)) {
+        query.role = { $in: role };
+      } else if (typeof role === "string") {
+        // Handle comma-separated list, e.g. 'super_admin,manager,accountant'
+        if (role.includes(",")) {
+          const rolesArray = role.split(",").map(r => r.trim()).filter(Boolean);
+          query.role = { $in: rolesArray };
+        } else {
+          query.role = role;
+        }
+      }
     }
 
     if (isActive !== undefined) {

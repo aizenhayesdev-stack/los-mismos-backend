@@ -78,7 +78,15 @@ export const updateAgentSchema: ZodSchema<{
 export const getAgentsQuerySchema = z.object({
   page: z.string().optional().default("1").transform(Number).pipe(z.number().min(1)),
   limit: z.string().optional().default("10").transform(Number).pipe(z.number().min(1).max(100)), 
-  role: z.nativeEnum(UserRole).optional(),
+  role: z
+    .union([
+      z.nativeEnum(UserRole),
+      z.string().regex(
+        /^([a-z_]+,)*[a-z_]+$/,
+        { message: "Role must be a single role or comma-separated list of roles" }
+      )
+    ])
+    .optional(),
   isActive: z.string().transform(val => val === 'true').optional(),
   search: z.string().optional()
 });

@@ -11,6 +11,8 @@ export const createDestinationSchema: ZodSchema<{
   TerminalOfReference?: string;
   isTerminal?: boolean;
   isActive?: boolean;
+  latitude?: number;
+  longitude?: number;
 }> = z.object({
   name: z.string()
     .min(1, "Name is required")
@@ -50,7 +52,17 @@ export const createDestinationSchema: ZodSchema<{
   
   isTerminal: z.boolean().optional(),
   
-  isActive: z.boolean().optional()
+  isActive: z.boolean().optional(),
+
+  latitude: z.number()
+    .min(-90, "Latitude must be between -90 and 90")
+    .max(90, "Latitude must be between -90 and 90")
+    .optional(),
+  
+  longitude: z.number()
+    .min(-180, "Longitude must be between -180 and 180")
+    .max(180, "Longitude must be between -180 and 180")
+    .optional()
 });
 
 export const updateDestinationSchema: ZodSchema<{
@@ -64,6 +76,8 @@ export const updateDestinationSchema: ZodSchema<{
   TerminalOfReference?: string;
   isTerminal?: boolean;
   isActive?: boolean;
+  latitude?: number;
+  longitude?: number;
 }> = z.object({
   name: z.string()
     .max(255, "Name must be less than 255 characters")
@@ -99,5 +113,15 @@ export const updateDestinationSchema: ZodSchema<{
     .regex(/^[0-9a-fA-F]{24}$/, "Terminal reference must be a valid MongoDB ObjectId")
     .optional(),
   isTerminal: z.boolean().optional(),
-  isActive: z.boolean().optional()
+  isActive: z.boolean().optional(),
+
+  latitude: z.number()
+    .min(-90, "Latitude must be between -90 and 90")
+    .max(90, "Latitude must be between -90 and 90")
+    .optional(),
+  
+  longitude: z.number()
+    .min(-180, "Longitude must be between -180 and 180")
+    .max(180, "Longitude must be between -180 and 180")
+    .optional()
 });

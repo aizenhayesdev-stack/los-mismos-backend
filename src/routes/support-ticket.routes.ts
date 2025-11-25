@@ -18,20 +18,23 @@ import {
   assignTicketSchema,
 } from "../validators/supportTicketValidators";
 
+import { checkPermission } from "../middleware/check-permission.middleware";
+import { PermissionModule, PermissionAction } from "../models/permission.model";
+
 const router = Router();
 
 // Customer routes
-router.post("/", checkUserAuth, validateBody(createTicketSchema), createTicket);
-router.get("/my-tickets", checkUserAuth, getCustomerTickets);
-router.get("/:ticketId", checkUserAuth, getTicketById);
-router.post("/:ticketId/comments", checkUserAuth, validateBody(addCommentSchema), addComment);
+router.post("/", checkUserAuth, checkPermission(PermissionModule.SUPPORT_TICKETS, PermissionAction.CREATE), validateBody(createTicketSchema), createTicket);
+router.get("/my-tickets", checkUserAuth, checkPermission(PermissionModule.SUPPORT_TICKETS, PermissionAction.VIEW), getCustomerTickets);
+router.get("/:ticketId", checkUserAuth, checkPermission(PermissionModule.SUPPORT_TICKETS, PermissionAction.VIEW), getTicketById);
+router.post("/:ticketId/comments", checkUserAuth, checkPermission(PermissionModule.SUPPORT_TICKETS, PermissionAction.CREATE), validateBody(addCommentSchema), addComment);
 
 // Admin/Manager routes
-router.get("/", checkAdminAuth, getAllTickets);
-router.get("/:ticketId", checkAdminAuth, getTicketById);
-router.patch("/:ticketId/status", checkAdminAuth, validateBody(updateTicketStatusSchema), updateTicketStatus);
-router.post("/:ticketId/assign", checkAdminAuth, validateBody(assignTicketSchema), assignTicket);
-router.post("/:ticketId/comments", checkAdminAuth, validateBody(addCommentSchema), addComment);
+router.get("/", checkAdminAuth, checkPermission(PermissionModule.SUPPORT_TICKETS, PermissionAction.VIEW), getAllTickets);
+// router.get("/:ticketId", checkAdminAuth, getTicketById); // Covered by the route above
+router.patch("/:ticketId/status", checkAdminAuth, checkPermission(PermissionModule.SUPPORT_TICKETS, PermissionAction.EDIT), validateBody(updateTicketStatusSchema), updateTicketStatus);
+router.post("/:ticketId/assign", checkAdminAuth, checkPermission(PermissionModule.SUPPORT_TICKETS, PermissionAction.EDIT), validateBody(assignTicketSchema), assignTicket);
+router.post("/:ticketId/comments", checkAdminAuth, checkPermission(PermissionModule.SUPPORT_TICKETS, PermissionAction.CREATE), validateBody(addCommentSchema), addComment);
 
 export default router;
 

@@ -20,7 +20,9 @@ export const createDestinations = async (req: Request, res: Response) => {
       MinutesOfDifference,
       TerminalOfReference,
       isTerminal,
-      isActive
+      isActive,
+      latitude,
+      longitude
     } = req.body;
 
     // Check if destination with same name already exists
@@ -31,6 +33,15 @@ export const createDestinations = async (req: Request, res: Response) => {
 
     if (existingDestination) {
       throw new CustomError(STATUS_CODES.CONFLICT, "Destination with this name already exists");
+    }
+
+    // Prepare location data if latitude and longitude are provided
+    let locationData: any = undefined;
+    if (latitude !== undefined && longitude !== undefined) {
+      locationData = {
+        type: 'Point',
+        coordinates: [longitude, latitude] // GeoJSON format: [longitude, latitude]
+      };
     }
 
     // Create new destination
@@ -45,6 +56,7 @@ export const createDestinations = async (req: Request, res: Response) => {
       TerminalOfReference: TerminalOfReference || null,
       isTerminal: isTerminal !== undefined ? isTerminal : false,
       isActive: isActive !== undefined ? isActive : true,
+      location: locationData
     });
 
     const savedDestination = await newDestination.save();
@@ -65,6 +77,9 @@ export const createDestinations = async (req: Request, res: Response) => {
           TerminalOfReference: savedDestination.TerminalOfReference,
           isTerminal: savedDestination.isTerminal,
           isActive: savedDestination.isActive,
+          location: savedDestination.location,
+          latitude: savedDestination.location?.coordinates?.[1],
+          longitude: savedDestination.location?.coordinates?.[0]
         }
       },
       ADMIN_CONSTANTS.DESTINATION_CREATED
@@ -107,7 +122,7 @@ export const getDestinations = async (req: Request, res: Response) => {
 export const updateDestination = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const { name, description, priceToDFW, priceFromDFW, priceRoundTrip, salesOffice, MinutesOfDifference, TerminalOfReference, isTerminal, isActive } = req.body;
+    const { name, description, priceToDFW, priceFromDFW, priceRoundTrip, salesOffice, MinutesOfDifference, TerminalOfReference, isTerminal, isActive, latitude, longitude } = req.body;
     const updateData: any = {};
     if (name) updateData.name = name;
     if (description) updateData.description = description;
@@ -119,6 +134,15 @@ export const updateDestination = async (req: Request, res: Response) => {
     if (TerminalOfReference) updateData.TerminalOfReference = TerminalOfReference;
     if (typeof isTerminal === 'boolean') updateData.isTerminal = isTerminal;
     if (typeof isActive === 'boolean') updateData.isActive = isActive;
+    
+    // Update location if latitude and longitude are provided
+    if (latitude !== undefined && longitude !== undefined) {
+      updateData.location = {
+        type: 'Point',
+        coordinates: [longitude, latitude] // GeoJSON format: [longitude, latitude]
+      };
+    }
+    
     const destination = await Destination.findByIdAndUpdate(id, updateData, { new: true });
     if (!destination) {
       throw new CustomError(STATUS_CODES.NOT_FOUND, ADMIN_CONSTANTS.DESTINATION_NOT_FOUND);

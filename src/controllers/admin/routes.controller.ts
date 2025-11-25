@@ -45,6 +45,73 @@ export const createRoute = async (req: Request, res: Response) => {
     if (existingRoute) {
       throw new CustomError(STATUS_CODES.CONFLICT, "Route with this name already exists");
     }
+
+    // --- Conflict Detection Start ---
+    if (bus && dayTime && dayTime.length > 0) {
+      // 1. Check Bus Conflict: Is this bus already assigned to another route at the same time?
+      const busConflict = await RouteModel.findOne({
+        bus: bus,
+        isActive: true,
+        dayTime: {
+          $elemMatch: {
+            $or: dayTime.map((dt: any) => ({
+              day: dt.day,
+              time: dt.time
+            }))
+          }
+        }
+      });
+
+      if (busConflict) {
+        throw new CustomError(
+          STATUS_CODES.CONFLICT, 
+          `Bus conflict: Bus is already assigned to route '${busConflict.name}' at one of the requested times.`
+        );
+      }
+
+      // 2. Check Driver Conflict: Is the driver of this bus assigned to ANY other bus at the same time?
+      const busDetails = await Bus.findById(bus);
+      if (busDetails) {
+        // Check both driver fields
+        const driverId = busDetails.driver || busDetails.mxdriverId;
+        
+        if (driverId) {
+          // Find all buses assigned to this driver
+          const driverBuses = await Bus.find({
+            $or: [
+              { driver: driverId },
+              { mxdriverId: driverId }
+            ],
+            _id: { $ne: bus } // Exclude current bus
+          }).select('_id');
+
+          const driverBusIds = driverBuses.map(b => b._id);
+
+          if (driverBusIds.length > 0) {
+            const driverConflict = await RouteModel.findOne({
+              bus: { $in: driverBusIds },
+              isActive: true,
+              dayTime: {
+                $elemMatch: {
+                  $or: dayTime.map((dt: any) => ({
+                    day: dt.day,
+                    time: dt.time
+                  }))
+                }
+              }
+            });
+
+            if (driverConflict) {
+              throw new CustomError(
+                STATUS_CODES.CONFLICT, 
+                `Driver conflict: The driver assigned to this bus is also assigned to route '${driverConflict.name}' (on a different bus) at one of the requested times.`
+              );
+            }
+          }
+        }
+      }
+    }
+    // --- Conflict Detection End ---
  
     // Create new route
     const newRoute = new RouteModel({
@@ -109,9 +176,6 @@ export const getRoutes = async (req: Request, res: Response) => {
     if (isActive !== undefined) {
       query.isActive = isActive === 'true'?true:false;
     } 
-    // else {
-    //   query.isActive = true; // Default to active routes
-    // }
 
     // Origin filter
     if (origin) {
@@ -124,9 +188,6 @@ export const getRoutes = async (req: Request, res: Response) => {
     }
 
     // Day filter (for specific day of week)
-    // Note: dayTime.time now stores time as a string in "HH:mm" format (e.g., "07:00", "14:30")
-    // We filter by dayTime.day which contains the day of week string ("monday", "tuesday", etc.)
-    
     // Get current time in UTC as "HH:mm" string format
     const now = new Date();
     const currentHoursUTC = now.getUTCHours();
@@ -233,24 +294,6 @@ export const getRoutes = async (req: Request, res: Response) => {
       }
     }
 
-    // // Time filter (for specific time range)
-    // if (time) {
-    //   const timeParts = time.toString().split('-');
-    //   if (timeParts.length === 2) {
-    //     const startTime = timeParts[0];
-    //     const endTime = timeParts[1];
-    //     query['dayTime.time'] = {
-    //       $gte: new Date(`1970-01-01T${startTime}:00.000Z`),
-    //       $lte: new Date(`1970-01-01T${endTime}:00.000Z`)
-    //     };
-    //   }
-    // }
-
-    // Bus filter
-    // if (bus) {
-    //   query.bus = bus;
-    // }
-
     // Search filter (searches in route name, origin, destination names)
     if (search) {
       query.$or = [
@@ -259,19 +302,6 @@ export const getRoutes = async (req: Request, res: Response) => {
         { 'destination.name': { $regex: search, $options: 'i' } }
       ];
     }
-
-  // // Date filtering for departure and return dates
-  //   if (departureDate) {
-  //     const depDate = new Date(departureDate.toString());
-  //     const nextDay = new Date(depDate);
-  //     nextDay.setDate(nextDay.getDate() + 1);
-      
-  //     // Filter routes that have schedules on the departure date
-  //     query['dayTime.time'] = {
-  //       $gte: depDate,
-  //       $lt: nextDay
-  //     };
-  //   }  
 
     // Build sort options
     let sortOptions: Record<string, 1 | -1> = { updatedAt: -1 };
@@ -283,8 +313,8 @@ export const getRoutes = async (req: Request, res: Response) => {
 
     // Build populate options
     const populateOptions = [
-      { path: "origin", select: "name description priceToDFW priceFromDFW priceRoundTrip" },
-      { path: "destination", select: "name description priceToDFW priceFromDFW priceRoundTrip MinutesOfDifference" },
+      { path: "origin", select: "name description priceToDFW priceFromDFW priceRoundTrip location" },
+      { path: "destination", select: "name description priceToDFW priceFromDFW priceRoundTrip MinutesOfDifference location" },
       { path: "bus", select: "code serialNumber capacity seatLayout amenities" },
       { path: "intermediateStops", select: "name description" }
     ];
@@ -479,339 +509,94 @@ export const getRouteById = async (req: Request, res: Response) => {
     const { date ,returnDate} = req.query;
     const tripType = returnDate ? TripType.ROUND_TRIP : TripType.ONE_WAY;
     const populateOptions = [
-      { path: "origin", select: "name description priceToDFW priceFromDFW priceRoundTrip" },
-      { path: "destination", select: "name description priceToDFW priceFromDFW priceRoundTrip" },
+      { path: "origin", select: "name description priceToDFW priceFromDFW priceRoundTrip location" },
+      { path: "destination", select: "name description priceToDFW priceFromDFW priceRoundTrip location" },
       { path: "bus", select: "code serialNumber capacity seatLayout amenities" },
       { path: "intermediateStops", select: "name description" }
     ];
+
     const route = await RouteModel.findById(id).populate(populateOptions);
-    
+
     if (!route) {
-      return ResponseUtil.errorResponse(res, STATUS_CODES.NOT_FOUND, "Route not found");
+      throw new CustomError(STATUS_CODES.NOT_FOUND, ADMIN_CONSTANTS.ROUTE_NOT_FOUND);
     }
 
-    let routeObj = route.toObject();
+    // Calculate fare
+    const baseFare = await calculateFare((route as any)._id.toString(), tripType as string);
     
-    // Helper function to check if a seat is booked for a specific date
-    const isSeatBookedForDate = (seat: any, targetDate: Date): boolean => {
-      if (!seat.departureDateBookings || seat.departureDateBookings.length === 0) {
-        return false;
-      }
-      
-      return seat.departureDateBookings.some((booking: any) => {
-        const bookingDate = new Date(booking.departureDate);
-        const queryDate = new Date(targetDate);
-        const bookingStatus = booking.status?.toLowerCase();
-        return bookingDate.toDateString() === queryDate.toDateString() && 
-               (bookingStatus === 'booked' || bookingStatus === 'selected');
-      });
-    };
-
-    // Helper function to get seat status for a specific date
-    const getSeatStatusForDate = (seat: any, targetDate: Date): string => {
-      if (!seat.departureDateBookings || seat.departureDateBookings.length === 0) {
-        return 'available';
-      }
-      
-      const booking = seat.departureDateBookings.find((booking: any) => {
-        const bookingDate = new Date(booking.departureDate);
-        const queryDate = new Date(targetDate);
-        return bookingDate.toDateString() === queryDate.toDateString();
-      });
-
-      if (!booking) {
-        return 'available';
-      }
-
-      // Normalize status to lowercase for comparison
-      const bookingStatus = booking.status?.toLowerCase();
-
-      // Check if hold is expired
-      if (bookingStatus === 'selected' && booking.expiresAt) {
-        if (new Date() > new Date(booking.expiresAt)) {
-          return 'available';
-        }
-        return 'selected';
-      }
-
-      if (bookingStatus === 'booked') {
-        return 'booked';
-      }
-
-      return 'available';
-    };
-
-    // Calculate available seats
-    const bus = routeObj.bus as any;
-    if (bus && bus.seatLayout && bus.seatLayout.seats) {
-      const seats = bus.seatLayout.seats;
-      const totalSeats = seats.length;
-      
-      let availableSeats = 0;
-      let bookedSeats = 0;
-      let heldSeats = 0;
-
-      if (date) {
-        // Filter seats based on departure date
+    // Get seat availability if date is provided
+    let seatAvailability = null;
+    if (date) {
+      const routeObj = route.toObject ? route.toObject() : route;
+      if (routeObj.bus && (routeObj.bus as any).seatLayout && (routeObj.bus as any).seatLayout.seats) {
+        const seats = (routeObj.bus as any).seatLayout.seats;
+        const totalSeats = seats.length;
         const targetDate = new Date(date as string);
         
-        // Add status information to each seat for the requested date
-        (routeObj.bus as any).seatLayout.seats = seats.map((seat: any) => {
-          const seatStatus = getSeatStatusForDate(seat, targetDate);
-          const isBooked = isSeatBookedForDate(seat, targetDate);
+        let availableSeats = 0;
+        let bookedSeats = 0;
+        let heldSeats = 0;
+
+        // Helper function to get seat status for a specific date (reused)
+        const getSeatStatusForDate = (seat: any, targetDate: Date): string => {
+          if (!seat.departureDateBookings || seat.departureDateBookings.length === 0) {
+            return 'available';
+          }
           
-          // Find the booking for this specific date to get userId
-          const dateSpecificBooking = seat.departureDateBookings?.find((booking: any) => {
+          const booking = seat.departureDateBookings.find((booking: any) => {
             const bookingDate = new Date(booking.departureDate);
             const queryDate = new Date(targetDate);
             return bookingDate.toDateString() === queryDate.toDateString();
           });
-          
-          return {
-            seatLabel: seat.seatLabel,
-            seatIndex: seat.seatIndex,
-            type: seat.type,
-            status: seatStatus,  // Updated to reflect date-specific status
-            isAvailable: !isBooked,  // Updated to reflect date-specific availability
-            userId: dateSpecificBooking?.userId || null,  // Updated to show who booked for this date
-            meta: seat.meta,
-            departureDateBookings: seat.departureDateBookings
-          };
+
+          if (!booking) {
+            return 'available';
+          }
+
+          const bookingStatus = booking.status?.toLowerCase();
+
+          if (bookingStatus === 'selected' && booking.expiresAt) {
+            if (new Date() > new Date(booking.expiresAt)) {
+              return 'available';
+            }
+            return 'selected';
+          }
+
+          if (bookingStatus === 'booked') {
+            return 'booked';
+          }
+
+          return 'available';
+        };
+
+        seats.forEach((seat: any) => {
+          const seatStatus = getSeatStatusForDate(seat, targetDate);
+          if (seatStatus === 'available') availableSeats++;
+          else if (seatStatus === 'booked') bookedSeats++;
+          else if (seatStatus === 'selected') heldSeats++;
         });
 
-        // Count seats by status for the specific date
-        availableSeats = (routeObj.bus as any).seatLayout.seats.filter((seat: any) => 
-          seat.status === 'available'
-        ).length;
-        
-        bookedSeats = (routeObj.bus as any).seatLayout.seats.filter((seat: any) => 
-          seat.status === 'booked'
-        ).length;
-        
-        heldSeats = (routeObj.bus as any).seatLayout.seats.filter((seat: any) => 
-          seat.status === 'selected'
-        ).length;
-      } else {
-        // Without date filter, show general seat availability
-        availableSeats = seats.filter((seat: any) => 
-          seat.status === 'available' || seat.isAvailable === true
-        ).length;
-        
-        bookedSeats = seats.filter((seat: any) => 
-          seat.status === 'booked'
-        ).length;
-        
-        heldSeats = seats.filter((seat: any) => 
-          seat.status === 'held' || seat.status === 'selected'
-        ).length;
-      }
-      const fare = await calculateFare(routeObj._id as string, tripType as string);
-      (routeObj as any).tax = parseFloat((fare * 0.10).toFixed(2)) as any;
-      (routeObj as any).baseFare = fare as any;
-      const routeWithSeatInfo = {
-        ...routeObj,
-        seatAvailability: {
+        seatAvailability = {
           total: totalSeats,
           available: availableSeats,
           booked: bookedSeats,
           held: heldSeats,
-          availableSeats: availableSeats,
-          ...(date && { departureDate: date })
-        }
-      };
-      
-      return ResponseUtil.successResponse(
-        res, 
-        STATUS_CODES.SUCCESS, 
-        { route: routeWithSeatInfo }, 
-        ADMIN_CONSTANTS.ROUTE_FETCHED
-      );
-    }
-    const fare = await calculateFare(routeObj._id as string, tripType as string);
-    (routeObj as any).baseFare = fare as any;
-    return ResponseUtil.successResponse(res, STATUS_CODES.SUCCESS, { route: routeObj }, ADMIN_CONSTANTS.ROUTE_FETCHED);
-  } catch (err) {
-    if (err instanceof CustomError)
-      return ResponseUtil.errorResponse(res, err.statusCode, err.message);
-    ResponseUtil.handleError(res, err);
-  }
-};
-
-/**
- * Get filter options for routes (destinations, buses, days, etc.)
- */
-export const getRouteFilterOptions = async (req: Request, res: Response) => {
-  try {
-    // Get all active destinations
-    const destinations = await Destination.find({ 
-      isActive: true, 
-      isDeleted: false 
-    }).select('name description priceToDFW priceFromDFW priceRoundTrip').sort({ name: 1 });
-
-    // Get all active buses
-    const buses = await Bus.find({ 
-      isActive: true 
-    }).select('code serialNumber capacity').sort({ code: 1 });
-
-    // Get unique days from routes
-    const dayTimeData = await RouteModel.aggregate([
-      { $match: { isActive: true } },
-      { $unwind: '$dayTime' },
-      { $group: { _id: '$dayTime.day' } },
-      { $sort: { _id: 1 } }
-    ]);
-
-    const availableDays = dayTimeData.map(item => item._id);
-
-    // Get time ranges from routes
-    const timeData = await RouteModel.aggregate([
-      { $match: { isActive: true } },
-      { $unwind: '$dayTime' },
-      { 
-        $group: { 
-          _id: null, 
-          minTime: { $min: '$dayTime.time' },
-          maxTime: { $max: '$dayTime.time' }
-        } 
-      }
-    ]);
-
-    const timeRange = timeData.length > 0 ? {
-      min: timeData[0].minTime,
-      max: timeData[0].maxTime
-    } : null;
-
-    // Get popular routes (most frequently used)
-    const popularRoutes = await RouteModel.aggregate([
-      { $match: { isActive: true } },
-      { 
-        $lookup: {
-          from: 'destinations',
-          localField: 'origin',
-          foreignField: '_id',
-          as: 'originData'
-        }
-      },
-      { 
-        $lookup: {
-          from: 'destinations',
-          localField: 'destination',
-          foreignField: '_id',
-          as: 'destinationData'
-        }
-      },
-      {
-        $project: {
-          _id: 1,
-          name: 1,
-          origin: { $arrayElemAt: ['$originData.name', 0] },
-          destination: { $arrayElemAt: ['$destinationData.name', 0] },
-          dayTimeCount: { $size: '$dayTime' }
-        }
-      },
-      { $sort: { dayTimeCount: -1 } },
-      { $limit: 10 }
-    ]);
-
-    return ResponseUtil.successResponse(
-      res,
-      STATUS_CODES.SUCCESS,
-      {
-        destinations,
-        buses,
-        availableDays,
-        timeRange,
-        popularRoutes,
-        tripTypes: [
-          { value: 'one-way', label: 'One Way' },
-          { value: 'round-trip', label: 'Round Trip' }
-        ],
-        sortOptions: [
-          { value: 'createdAt', label: 'Date Created' },
-          { value: 'name', label: 'Route Name' },
-          { value: 'dayTime.time', label: 'Departure Time' }
-        ]
-      },
-      'Filter options fetched successfully'
-    );
-  } catch (err) {
-    if (err instanceof CustomError)
-      return ResponseUtil.errorResponse(res, err.statusCode, err.message);
-    ResponseUtil.handleError(res, err);
-  }
-};
-
-/**
- * Search routes by origin and destination names (for autocomplete)
- */
-export const searchRoutes = async (req: Request, res: Response) => {
-  try {
-    const { q, limit = 10 } = req.query;
-    
-    if (!q || q.toString().trim().length < 2) {
-      return ResponseUtil.successResponse(
-        res,
-        STATUS_CODES.SUCCESS,
-        { routes: [] },
-        'Search query too short'
-      );
-    }
-
-    const searchQuery = q.toString().trim();
-    
-    const routes = await RouteModel.find({
-      isActive: true,
-      $or: [
-        { name: { $regex: searchQuery, $options: 'i' } },
-        { 'origin.name': { $regex: searchQuery, $options: 'i' } },
-        { 'destination.name': { $regex: searchQuery, $options: 'i' } }
-      ]
-    })
-    .populate('origin', 'name description priceToDFW priceFromDFW priceRoundTrip')
-    .populate('destination', 'name description priceToDFW priceFromDFW priceRoundTrip')
-    .populate('bus', 'code serialNumber capacity seatLayout amenities')
-    .limit(Number(limit))
-    .sort({ name: 1 });
-
-    // Calculate available seats for each route
-    const routesWithSeatInfo = routes.map((route: any) => {
-      const routeObj = route.toObject();
-      
-      if (routeObj.bus && routeObj.bus.seatLayout && routeObj.bus.seatLayout.seats) {
-        const seats = routeObj.bus.seatLayout.seats;
-        const totalSeats = seats.length;
-        const availableSeats = seats.filter((seat: any) => 
-          seat.status === 'available' && seat.isAvailable === true
-        ).length;
-        const bookedSeats = seats.filter((seat: any) => 
-          seat.status === 'booked'
-        ).length;
-        const heldSeats = seats.filter((seat: any) => 
-          seat.status === 'held' || seat.status === 'selected'
-        ).length;
-
-        return {
-          ...routeObj,
-          seatAvailability: {
-            total: totalSeats,
-            available: availableSeats,
-            booked: bookedSeats,
-            held: heldSeats,
-            availableSeats: seats.filter((seat: any) => 
-              seat.status === 'available' && seat.isAvailable === true
-            )
-          }
+          departureDate: date
         };
       }
-      
-      return routeObj;
-    });
+    }
 
     return ResponseUtil.successResponse(
       res,
       STATUS_CODES.SUCCESS,
-      { routes: routesWithSeatInfo },
-      'Search results fetched successfully'
+      { 
+        route: {
+          ...route.toObject(),
+          baseFare,
+          ...(seatAvailability && { seatAvailability })
+        }
+      },
+      ADMIN_CONSTANTS.ROUTE_FETCHED
     );
   } catch (err) {
     if (err instanceof CustomError)
@@ -823,20 +608,61 @@ export const searchRoutes = async (req: Request, res: Response) => {
 export const updateRoute = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const { name, origin, destination, bus, dayTime, intermediateStops, isActive } = req.body;
-    const updateData: any = {};
-    if (name) updateData.name = name;
-    if (origin) updateData.origin = origin;
-    if (destination) updateData.destination = destination;
-    if (bus) updateData.bus = bus;
-    if (dayTime) updateData.dayTime = dayTime;
-    if (intermediateStops) updateData.intermediateStops = intermediateStops;
-    if (typeof isActive === 'boolean') updateData.isActive = isActive?true:false;
-    const route = await RouteModel.findByIdAndUpdate(id, updateData, { new: true });
+    const {
+      name,
+      origin,
+      destination,
+      bus,
+      dayTime,
+      intermediateStops,
+      isActive
+    } = req.body;
+
+    const route = await RouteModel.findById(id);
+
     if (!route) {
       throw new CustomError(STATUS_CODES.NOT_FOUND, ADMIN_CONSTANTS.ROUTE_NOT_FOUND);
     }
-    return ResponseUtil.successResponse(res, STATUS_CODES.SUCCESS, { route }, ADMIN_CONSTANTS.ROUTE_UPDATED);
+
+    // Check if name is being updated and if it already exists
+    if (name && name !== route.name) {
+      const existingRoute = await RouteModel.findOne({
+        name: name,
+      });
+
+      if (existingRoute) {
+        throw new CustomError(STATUS_CODES.CONFLICT, "Route with this name already exists");
+      }
+    }
+
+    // Update fields
+    if (name) route.name = name;
+    if (origin) route.origin = origin;
+    if (destination) route.destination = destination;
+    if (bus) route.bus = bus;
+    if (dayTime) route.dayTime = dayTime;
+    if (intermediateStops) route.intermediateStops = intermediateStops;
+    if (isActive !== undefined) route.isActive = isActive;
+
+    const updatedRoute = await route.save();
+
+    return ResponseUtil.successResponse(
+      res,
+      STATUS_CODES.SUCCESS,
+      {
+        route: {
+          id: updatedRoute._id,
+          name: updatedRoute.name,
+          origin: updatedRoute.origin,
+          destination: updatedRoute.destination,
+          bus: updatedRoute.bus,
+          dayTime: updatedRoute.dayTime,
+          intermediateStops: updatedRoute.intermediateStops,
+          isActive: updatedRoute.isActive,
+        }
+      },
+      ADMIN_CONSTANTS.ROUTE_UPDATED
+    );
   } catch (err) {
     if (err instanceof CustomError)
       return ResponseUtil.errorResponse(res, err.statusCode, err.message);
@@ -847,14 +673,51 @@ export const updateRoute = async (req: Request, res: Response) => {
 export const deleteRoute = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const route = await RouteModel.findByIdAndUpdate(id, { isDeleted: true }, { new: true });
+
+    const route = await RouteModel.findById(id);
+
     if (!route) {
       throw new CustomError(STATUS_CODES.NOT_FOUND, ADMIN_CONSTANTS.ROUTE_NOT_FOUND);
     }
-    return ResponseUtil.successResponse(res, STATUS_CODES.SUCCESS, { route }, ADMIN_CONSTANTS.ROUTE_DELETED);
+
+    await RouteModel.findByIdAndDelete(id);
+
+    return ResponseUtil.successResponse(
+      res,
+      STATUS_CODES.SUCCESS,
+      {},
+      ADMIN_CONSTANTS.ROUTE_DELETED
+    );
   } catch (err) {
     if (err instanceof CustomError)
       return ResponseUtil.errorResponse(res, err.statusCode, err.message);
     ResponseUtil.handleError(res, err);
   }
+};
+
+export const getRouteFilterOptions = async (req: Request, res: Response) => {
+  try {
+    const origins = await RouteModel.distinct("origin");
+    const destinations = await RouteModel.distinct("destination");
+    
+    // Populate origin and destination details
+    const populatedOrigins = await Destination.find({ _id: { $in: origins } }).select('name');
+    const populatedDestinations = await Destination.find({ _id: { $in: destinations } }).select('name');
+
+    return ResponseUtil.successResponse(
+      res,
+      STATUS_CODES.SUCCESS,
+      {
+        origins: populatedOrigins,
+        destinations: populatedDestinations
+      },
+      "Filter options fetched successfully"
+    );
+  } catch (err) {
+    ResponseUtil.handleError(res, err);
+  }
+};
+
+export const searchRoutes = async (req: Request, res: Response) => {
+  return getRoutes(req, res);
 };

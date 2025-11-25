@@ -1,10 +1,11 @@
-import mongoose, { Schema, model } from "mongoose";
+import mongoose, { Schema, model, Document } from "mongoose";
 import { LoginTypes, ObjectId, UserRole } from "./common/types";
 import { IProfile } from "./profile.model";
 
 export interface IAuth extends Document {
   email: string;
   password: string;
+  reason?: string | null;
   role: UserRole;
   profile: ObjectId | IProfile;
   isVerified: boolean
@@ -54,6 +55,10 @@ const AuthSchema = new Schema(
       type: Schema.Types.String,
       enum: LoginTypes,
       default: LoginTypes.Default,
+    },
+    reason:{
+      type: Schema.Types.String,
+      default: null,
     }
   },
   {
@@ -61,6 +66,6 @@ const AuthSchema = new Schema(
   }
 );
 
-const AuthModel = model("Auth", AuthSchema);
+const AuthModel = model<IAuth>("Auth", AuthSchema);
 
 export default AuthModel;

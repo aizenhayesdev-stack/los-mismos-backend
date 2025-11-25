@@ -2,6 +2,8 @@ import cors from "cors";
 import dotenv from "dotenv";
 import morgan from "morgan";
 import morganBody from "morgan-body";
+import helmet from "helmet";
+import rateLimit from "express-rate-limit";
 import { connectDB } from "./config/db";
 // import swaggerJSDoc from "swagger-jsdoc";
 // import swaggerUi from 'swagger-ui-express';
@@ -33,6 +35,9 @@ import adminQueueRoutes from "./routes/admin/queue.routes";
 // Customer Support System Routes
 import chatRoutes from "./routes/chat.routes";
 import supportTicketRoutes from "./routes/support-ticket.routes";
+import adminCustomerRoutes from "./routes/admin/customer.routes";
+import adminSearchRoutes from "./routes/admin/search.routes";
+import adminUserManagementRoutes from "./routes/admin/user-management.routes";
 
 dotenv.config();
 
@@ -51,8 +56,20 @@ app.use('/stripe', stripeWebhookRoutes);
 
 // const swaggerSpec = swaggerJSDoc(swaggerOptions);
 // Middleware
+app.use(helmet({
+  crossOriginResourcePolicy: false, // Disable CORP to allow cross-origin access to static files
+}));
+// const limiter = rateLimit({
+//   windowMs: 15 * 60 * 1000, // 15 minutes
+//   max: 100, // Limit each IP to 100 requests per `window` (here, per 15 minutes)
+//   standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
+//   legacyHeaders: false, // Disable the `X-RateLimit-*` headers
+// });
+// app.use(limiter);
 app.use(express.json());
-app.use(cors({ origin: "*" }));
+app.use(cors({ 
+  origin: "*"
+}));
 app.use(morgan("dev"));
 app.use("/public/uploads", express.static("./public/uploads"));
 // app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
@@ -89,9 +106,23 @@ app.use(`${API_PREFIX}/admin/notifications`, adminNotificationRoutes);
 app.use(`${API_PREFIX}/admin/queues`, adminQueueRoutes);
 app.use(`${API_PREFIX}/admin/chat`,chatRoutes );
 app.use(`${API_PREFIX}/admin/support-tickets`, supportTicketRoutes);
+app.use(`${API_PREFIX}/admin/customers`, adminCustomerRoutes);
+app.use(`${API_PREFIX}/admin/search`, adminSearchRoutes);
+app.use(`${API_PREFIX}/admin/users`, adminUserManagementRoutes);
 // app.use(`${API_PREFIX}/admin/misc`, adminMiscRoutes);
 // booking routes (real-time seat booking)
 // web routes
 // app.use(`/api`, webRoutes);
+
+// Global Error Handler
+app.use((err: any, req: Request, res: Response, next: any) => {
+  const statusCode = err.statusCode || 500;
+  const message = err.message || "Internal Server Error";
+  res.status(statusCode).json({
+    success: false,
+    message,
+    stack: process.env.NODE_ENV === "development" ? err.stack : undefined,
+  });
+});
 
 export default app;

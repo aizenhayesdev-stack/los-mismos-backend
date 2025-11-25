@@ -1,4 +1,5 @@
 import { getFirebaseMessagingSafe, isFCMEnabled } from "../config/firebase";
+import { IAuth } from "../models/auth.model";
 import Notification, {
   INotification,
   NotificationMetadata,
@@ -28,6 +29,7 @@ export interface CreateNotificationOptions {
   expiresAt?: Date;
   sendPush?: boolean;
   sendEmail?: boolean;
+  sendSms?: boolean;
   sendInApp?: boolean;
 }
 
@@ -193,7 +195,7 @@ class NotificationService {
   }
 
   /**
-   * Send notification to a specific user (both DB and push if enabled)
+   * Send notification to a specific user (both DB and push/email/sms if enabled)
    */
   async sendToUser(options: CreateNotificationOptions): Promise<INotification> {
     try {
@@ -222,7 +224,7 @@ class NotificationService {
       // Create notification in DB
       const notification = await this.createNotification(options);
 
-      // Send push notification if enabled
+      // 1. Send Push Notification
       if (options.sendPush !== false && prefs?.pushEnabled !== false) {
         try {
           // Get user's active devices
@@ -244,7 +246,6 @@ class NotificationService {
             dataPayload.notificationId = (notification._id as any).toString();
             dataPayload.category = options.category;
 
-            // Send to all devices
             // Send to all devices
             const pushPromises = devices.map((device) =>
               this.sendPushNotification({
@@ -291,7 +292,52 @@ class NotificationService {
           }
         } catch (pushError) {
           console.error("Error sending push notification:", pushError);
-          // Continue even if push fails - DB notification is created
+          // Continue even if push fails
+        }
+      }
+
+      // 2. Send Email Notification
+      if (options.sendEmail !== false && prefs?.emailEnabled !== false) {
+        try {
+          const auth = await AuthModel.findById(options.userId);
+          if (auth && auth.email) {
+            const { sendEmail } = await import("../utils/SendEmail");
+            await sendEmail(
+              auth.email,
+              options.title,
+              `
+              <div style="font-family: Arial, sans-serif; padding: 20px;">
+                <h2>${options.title}</h2>
+                <p>${options.body}</p>
+                ${
+                  options.imageUrl
+                    ? `<img src="${options.imageUrl}" style="max-width: 100%;" />`
+                    : ""
+                }
+                <hr />
+                <p style="font-size: 12px; color: #666;">
+                  You received this email because you have notifications enabled.
+                  <a href="#">Manage Preferences</a>
+                </p>
+              </div>
+              `
+            );
+            console.log(`📧 Email sent to ${auth.email}`);
+          }
+        } catch (emailError) {
+          console.error("Error sending email notification:", emailError);
+        }
+      }
+
+      // 3. Send SMS Notification (Placeholder)
+      if (prefs?.smsEnabled === true && profile?.phoneNumber) {
+        try {
+          // TODO: Integrate with SMS provider (e.g., Twilio)
+          console.log(
+            `📱 [MOCK] SMS sent to ${profile.phoneNumber}: ${options.title} - ${options.body}`
+          );
+        } catch (smsError) {
+          console.error("Error sending SMS notification:", smsError);
         }
       }
 
@@ -317,7 +363,7 @@ class NotificationService {
       const promises = users.map((user) =>
         this.sendToUser({
           ...options,
-          userId: user._id.toString(),
+          userId: (user as any)._id.toString(),
         }).catch((err) => {
           console.error(
             `Failed to send notification to user ${user._id}:`,
@@ -882,7 +928,7 @@ class NotificationService {
       const queuePromises = users.map((user) =>
         this.queueToUser({
           ...options,
-          userId: user._id.toString(),
+          userId: (user as any)._id.toString(),
         }).catch((err) => {
           console.error(
             `Failed to queue notification to user ${user._id}:`,

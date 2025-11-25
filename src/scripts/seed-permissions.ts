@@ -82,6 +82,24 @@ const permissionDefinitions = [
   // Permissions
   { module: PermissionModule.PERMISSIONS, action: PermissionAction.VIEW, description: 'View permissions' },
   { module: PermissionModule.PERMISSIONS, action: PermissionAction.EDIT, description: 'Edit permissions' },
+  
+  // Notifications
+  { module: PermissionModule.NOTIFICATIONS, action: PermissionAction.VIEW, description: 'View notifications' },
+  { module: PermissionModule.NOTIFICATIONS, action: PermissionAction.DELETE, description: 'Delete notifications' },
+
+  // Support Tickets
+  { module: PermissionModule.SUPPORT_TICKETS, action: PermissionAction.VIEW, description: 'View support tickets' },
+  { module: PermissionModule.SUPPORT_TICKETS, action: PermissionAction.CREATE, description: 'Create support tickets' },
+  { module: PermissionModule.SUPPORT_TICKETS, action: PermissionAction.EDIT, description: 'Edit support tickets' },
+  { module: PermissionModule.SUPPORT_TICKETS, action: PermissionAction.DELETE, description: 'Delete support tickets' },
+
+  // Customers
+  { module: PermissionModule.CUSTOMERS, action: PermissionAction.VIEW, description: 'View customers' },
+  { module: PermissionModule.CUSTOMERS, action: PermissionAction.EDIT, description: 'Edit customers (suspend/activate)' },
+
+  // Bulk Operations
+  { module: PermissionModule.BULK_OPERATIONS, action: PermissionAction.VIEW, description: 'View bulk operations' },
+  { module: PermissionModule.BULK_OPERATIONS, action: PermissionAction.CREATE, description: 'Perform bulk operations' },
 ];
 
 // Default role permissions - Carefully designed for a ticketing/transportation system
@@ -178,6 +196,31 @@ const defaultRolePermissions = {
       
       // Can view permissions but not edit (only super admin can edit)
       { module: PermissionModule.PERMISSIONS, actions: [PermissionAction.VIEW] },
+
+      // Can manage support tickets
+      { module: PermissionModule.SUPPORT_TICKETS, actions: [
+        PermissionAction.VIEW, 
+        PermissionAction.CREATE, 
+        PermissionAction.EDIT
+      ]},
+
+      // Can view and manage customers
+      { module: PermissionModule.CUSTOMERS, actions: [
+        PermissionAction.VIEW, 
+        PermissionAction.EDIT
+      ]},
+
+      // Can perform bulk operations
+      { module: PermissionModule.BULK_OPERATIONS, actions: [
+        PermissionAction.VIEW, 
+        PermissionAction.CREATE
+      ]},
+
+      // Can view notifications
+      { module: PermissionModule.NOTIFICATIONS, actions: [
+        PermissionAction.VIEW, 
+        PermissionAction.DELETE
+      ]},
     ]
   },
 
@@ -220,6 +263,18 @@ const defaultRolePermissions = {
       
       // Can view customer information
       { module: PermissionModule.USERS, actions: [PermissionAction.VIEW] },
+
+      // Can view notifications
+      { module: PermissionModule.NOTIFICATIONS, actions: [
+        PermissionAction.VIEW, 
+        PermissionAction.DELETE
+      ]},
+
+      // Can create support tickets
+      { module: PermissionModule.SUPPORT_TICKETS, actions: [
+        PermissionAction.VIEW, 
+        PermissionAction.CREATE
+      ]},
     ]
   },
 
@@ -242,6 +297,18 @@ const defaultRolePermissions = {
       
       // Can view passenger list
       { module: PermissionModule.USERS, actions: [PermissionAction.VIEW] },
+
+      // Can view notifications
+      { module: PermissionModule.NOTIFICATIONS, actions: [
+        PermissionAction.VIEW, 
+        PermissionAction.DELETE
+      ]},
+
+      // Can create support tickets
+      { module: PermissionModule.SUPPORT_TICKETS, actions: [
+        PermissionAction.VIEW, 
+        PermissionAction.CREATE
+      ]},
     ]
   },
 
@@ -264,6 +331,18 @@ const defaultRolePermissions = {
       
       // Can view basic settings (terms, policies)
       { module: PermissionModule.SETTINGS, actions: [PermissionAction.VIEW] },
+
+      // Can view notifications
+      { module: PermissionModule.NOTIFICATIONS, actions: [
+        PermissionAction.VIEW, 
+        PermissionAction.DELETE
+      ]},
+
+      // Can create support tickets
+      { module: PermissionModule.SUPPORT_TICKETS, actions: [
+        PermissionAction.VIEW, 
+        PermissionAction.CREATE
+      ]},
     ]
   },
 };

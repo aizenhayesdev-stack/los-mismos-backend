@@ -15,6 +15,10 @@ export enum PermissionModule {
   SETTINGS = 'settings',
   USERS = 'users',
   PERMISSIONS = 'permissions',
+  NOTIFICATIONS = 'notifications',
+  SUPPORT_TICKETS = 'support_tickets',
+  CUSTOMERS = 'customers',
+  BULK_OPERATIONS = 'bulk_operations',
 }
 
 // Define all possible actions

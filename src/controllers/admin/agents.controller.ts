@@ -54,7 +54,7 @@ export const createAgent = async (req: Request, res: Response) => {
       role: role,
       isActive: isActive,
       isVerified: true, // Agents are auto-verified
-      isProfileCompleted: false
+      isProfileCompleted: true
     });
 
     const savedAuth = await newAuth.save();

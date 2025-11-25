@@ -15,6 +15,10 @@ export interface IDestination extends Document {
   isTerminal: boolean;
   isActive: boolean;
   isDeleted: boolean;
+  location?: {
+    type: string;
+    coordinates: number[]; // [longitude, latitude]
+  };
   createdAt: Date;
   updatedAt: Date;
 }
@@ -31,8 +35,22 @@ const DestinationSchema = new Schema<IDestination>({
   TerminalOfReference: { type: Schema.Types.ObjectId, ref: "Destination", required: false },
   isTerminal: { type: Boolean, default: false },
   isActive: { type: Boolean, default: true },
-  isDeleted: { type: Boolean, default: false }
+  isDeleted: { type: Boolean, default: false },
+  location: {
+    type: {
+      type: String,
+      enum: ['Point'],
+      default: 'Point'
+    },
+    coordinates: {
+      type: [Number],
+      required: false
+    }
+  }
 }, commonOptions);
+
+// Create 2dsphere index for geospatial queries
+DestinationSchema.index({ location: '2dsphere' });
 
 // Model export
 const Destination = model<IDestination>('Destination', DestinationSchema);

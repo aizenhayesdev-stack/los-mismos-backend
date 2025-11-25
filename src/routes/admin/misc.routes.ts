@@ -15,5 +15,4 @@ const router = Router();
 router.get("/dashboard", checkAdminAuth, getDashboard);
 router.post("/update-currency", checkAdminAuth, validateBody(updateCurrencySchema), updateCurrency);
 router.get("/get-currency", checkAdminAuth, getCurrency);
-
 export default router;
